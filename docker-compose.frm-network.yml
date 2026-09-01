@@ -1,0 +1,19 @@
+# Production on the frm-ai VM: join the existing frm_ai Docker network.
+# Portainer: set Compose path to multiple files OR paste networks section manually.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.frm-network.yml up -d
+#
+# Env:
+#   FRM_API_BASE_URL=http://backend:8000
+
+services:
+  viewer:
+    environment:
+      FRM_API_BASE_URL: ${FRM_API_BASE_URL:-http://backend:8000}
+    networks:
+      - frm-ai-network
+
+networks:
+  frm-ai-network:
+    external: true
+    name: ${FRM_AI_NETWORK:-frm_ai_frm-ai-network}

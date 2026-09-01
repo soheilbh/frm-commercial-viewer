@@ -35,13 +35,17 @@ Open http://localhost:8092
 | `FRM_COMMERCIAL_VIEWER_API_KEY` | **viewer + frm-api** | Shared secret; unset = open (local/dev) |
 | `COMMERCIAL_VIEWER_URL` | **frm-api** (optional) | CORS origin if browser calls API directly |
 
-Production example:
+Production example (same VM as frm-ai — **use internal Docker URL, not :18443**):
 
 ```env
-# frm-commercial-viewer stack
-FRM_API_BASE_URL=https://10.52.10.192:18443
+# Join frm_ai_frm-ai-network (see docker-compose.frm-network.yml)
+FRM_API_BASE_URL=http://backend:8000
 FRM_COMMERCIAL_VIEWER_API_KEY=your-shared-secret
+```
 
+`https://10.52.10.192:18443` is only for **browsers** (nginx public API). Server-side stacks like this one and BD monitoring call `http://backend:8000` on the Docker network.
+
+```env
 # frm-ai stack (frm-api)
 FRM_COMMERCIAL_VIEWER_API_KEY=your-shared-secret
 COMMERCIAL_VIEWER_URL=http://10.52.10.192:8092
@@ -52,8 +56,15 @@ The viewer calls `/api/commercial-report/saved` on itself; Next.js proxies to fr
 ## Docker / Portainer
 
 1. Deploy this repo as stack `frm_commercial_viewer` (port **8092**).
-2. Set `FRM_API_BASE_URL` and `FRM_COMMERCIAL_VIEWER_API_KEY` on the viewer stack.
-3. Set the **same** `FRM_COMMERCIAL_VIEWER_API_KEY` on **frm-api** and redeploy frm-ai.
+2. Add second compose file: `docker-compose.frm-network.yml` (joins `frm_ai_frm-ai-network`).
+3. Set env on viewer stack:
+   ```env
+   FRM_API_BASE_URL=http://backend:8000
+   FRM_COMMERCIAL_VIEWER_API_KEY=your-shared-secret
+   ```
+4. Set the **same** `FRM_COMMERCIAL_VIEWER_API_KEY` on **frm-api** and redeploy frm-ai.
+
+Do **not** use `https://…:18443` for `FRM_API_BASE_URL` — that is nginx for browsers; server-side proxy needs `http://backend:8000`.
 
 ## Production URL
 
