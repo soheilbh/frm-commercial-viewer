@@ -1,0 +1,19 @@
+# FRM Commercial Dashboard viewer — standalone Next.js (saved weekly reports only).
+# Portainer: stack from Git repo, rebuild on deploy.
+# Local: http://localhost:8092/?year=2026&week=26
+
+name: frm_commercial_viewer
+
+services:
+  viewer:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: frm-commercial-viewer:latest
+    container_name: frm-commercial-viewer
+    ports:
+      - "8092:8093"
+    environment:
+      FRM_API_BASE_URL: ${FRM_API_BASE_URL:-http://host.docker.internal:8000}
+      FRM_COMMERCIAL_VIEWER_API_KEY: ${FRM_COMMERCIAL_VIEWER_API_KEY:-}
+    restart: unless-stopped

@@ -1,0 +1,336 @@
+@import 'tailwindcss';
+
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@import './theme.css';
+@import './print-overrides.css';
+
+:root {
+  --radius: 0.5rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.005 285.823);
+  --primary: oklch(0.623 0.214 259.815);
+  --primary-foreground: oklch(0.97 0.014 254.604);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
+  --ring: oklch(0.623 0.214 259.815);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --commercial-good: oklch(0.627 0.194 149.214);
+  --commercial-bad: var(--destructive);
+  --threshold-within: var(--primary);
+  --threshold-near: var(--chart-4);
+  --threshold-above: var(--commercial-bad);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.141 0.005 285.823);
+  --sidebar-primary: oklch(0.623 0.214 259.815);
+  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+  --sidebar-accent: oklch(0.967 0.001 286.375);
+  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
+  --sidebar-border: oklch(0.92 0.004 286.32);
+  --sidebar-ring: oklch(0.623 0.214 259.815);
+}
+
+.dark {
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.546 0.245 262.881);
+  --primary-foreground: oklch(0.379 0.146 265.522);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.488 0.243 264.376);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --commercial-good: oklch(0.723 0.219 149.579);
+  --commercial-bad: var(--destructive);
+  --threshold-within: var(--primary);
+  --threshold-near: var(--chart-4);
+  --threshold-above: var(--commercial-bad);
+  --sidebar: oklch(0.21 0.006 285.885);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.546 0.245 262.881);
+  --sidebar-primary-foreground: oklch(0.379 0.146 265.522);
+  --sidebar-accent: oklch(0.274 0.006 286.033);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.488 0.243 264.376);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-commercial-good: var(--commercial-good);
+  --color-commercial-bad: var(--commercial-bad);
+  --color-commercial-feed: var(--commercial-feed);
+  --color-commercial-output: var(--commercial-output);
+  --color-commercial-quality: var(--commercial-quality);
+  --color-commercial-quality-muted: var(--commercial-quality-muted);
+  --color-commercial-pre-moisture: var(--commercial-pre-moisture);
+  --color-commercial-post-moisture: var(--commercial-post-moisture);
+  --color-commercial-mix-plastics: var(--commercial-mix-plastics);
+  --color-commercial-mix-organic: var(--commercial-mix-organic);
+  --color-commercial-mix-pvc: var(--commercial-mix-pvc);
+  --color-commercial-mix-beverage: var(--commercial-mix-beverage);
+  --color-commercial-mix-others: var(--commercial-mix-others);
+  --color-threshold-within: var(--threshold-within);
+  --color-threshold-near: var(--threshold-near);
+  --color-threshold-above: var(--threshold-above);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* View Transition Wave Effect */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  /* Ensure the outgoing view (old theme) is beneath */
+  z-index: 0;
+}
+
+::view-transition-new(root) {
+  /* Ensure the incoming view (new theme) is always on top */
+  z-index: 1;
+}
+
+@keyframes reveal {
+  from {
+    /* Use CSS variables for the origin, defaulting to center if not set */
+    clip-path: circle(0% at var(--x, 50%) var(--y, 50%));
+    opacity: 0.7;
+  }
+  to {
+    /* Use CSS variables for the origin, defaulting to center if not set */
+    clip-path: circle(150% at var(--x, 50%) var(--y, 50%));
+    opacity: 1;
+  }
+}
+
+::view-transition-new(root) {
+  /* Apply the reveal animation */
+  animation: reveal 0.4s ease-in-out forwards;
+}
+
+@keyframes status-glow {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+}
+
+.glowing-dot {
+  animation: status-glow 2s infinite ease-in-out;
+}
+
+.glass-card {
+  background: color-mix(in oklch, var(--card) 95%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+}
+
+/* The commercial A4 canvas keeps its desktop grid even when the app viewport is
+   narrow. Tailwind breakpoints follow the viewport, not the fixed-width report. */
+#commercial-dashboard-report[data-a4-layout='true'] .grid-cols-12 {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .lg\:col-span-4 {
+  grid-column: span 4 / span 4;
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .lg\:col-span-6 {
+  grid-column: span 6 / span 6;
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .lg\:grid-cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .lg\:grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .lg\:col-span-2 {
+  grid-column: span 2 / span 2;
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .commercial-snapshot-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#commercial-dashboard-report[data-a4-layout='true'] .commercial-decision-split {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+/* Layout follows the report card width, not the browser viewport (full page + A4). */
+#commercial-dashboard-report {
+  container-type: inline-size;
+  container-name: commercial-report;
+}
+
+.commercial-report-body {
+  /*
+   * Commercial report palette.
+   * Derived from the active shadcn theme chart tokens. Do not bind this report
+   * to one color family here: switching Blue/Green/Amber/Mono must carry the
+   * whole commercial visualization language with it.
+   */
+  --commercial-feed: var(--chart-2);
+  --commercial-output: var(--chart-3);
+  --commercial-quality: var(--chart-3);
+  --commercial-quality-muted: var(--chart-2);
+  --commercial-pre-moisture: var(--chart-1);
+  --commercial-post-moisture: var(--chart-2);
+  /*
+   * Five feed categories map to chart-1…chart-5 in stack order so each theme
+   * palette keeps maximum contrast between adjacent layers (no extra opacity).
+   */
+  --commercial-mix-plastics: var(--chart-1);
+  --commercial-mix-organic: var(--chart-2);
+  --commercial-mix-pvc: var(--chart-3);
+  --commercial-mix-beverage: var(--chart-4);
+  --commercial-mix-others: var(--chart-5);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+}
+
+#commercial-dashboard-report [data-slot='card'],
+#commercial-dashboard-report .metric-card,
+#commercial-dashboard-report .metric-row-label > div {
+  box-shadow: none;
+}
+
+@container commercial-report (min-width: 560px) {
+  #commercial-dashboard-report .commercial-decision-split {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  }
+}
+
+@container commercial-report (min-width: 720px) {
+  #commercial-dashboard-report .commercial-snapshot-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/*
+ * Report canvas is always a light document (same tokens as print/PNG export),
+ * even if the app shell theme changes later.
+ */
+#commercial-dashboard-report {
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.005 285.823);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
+  --primary: var(--color-sky-600);
+  --primary-foreground: var(--color-sky-50);
+  --ring: var(--color-sky-600);
+  --chart-1: var(--color-sky-600);
+  --chart-2: var(--color-sky-500);
+  --chart-3: var(--color-sky-800);
+  --chart-4: var(--color-sky-300);
+  --chart-5: var(--color-sky-700);
+  --commercial-good: oklch(0.627 0.194 149.214);
+  --commercial-bad: var(--destructive);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+}
+
+#commercial-dashboard-report .report-logo-light {
+  display: block !important;
+}
+
+#commercial-dashboard-report .report-logo-dark {
+  display: none !important;
+}

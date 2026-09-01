@@ -1,0 +1,340 @@
+/* Keep print overrides in a separate file so Tailwind v4 does not nest
+   print:* utilities inside this block (which breaks CSS parsing). */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  /* Reports are printed as light documents, even when the app UI is dark. */
+  html,
+  html.dark {
+    color-scheme: light !important;
+    --background: oklch(1 0 0) !important;
+    --foreground: oklch(0.141 0.005 285.823) !important;
+    --card: oklch(1 0 0) !important;
+    --card-foreground: oklch(0.141 0.005 285.823) !important;
+    --popover: oklch(1 0 0) !important;
+    --popover-foreground: oklch(0.141 0.005 285.823) !important;
+    --secondary: oklch(0.967 0.001 286.375) !important;
+    --secondary-foreground: oklch(0.21 0.006 285.885) !important;
+    --muted: oklch(0.967 0.001 286.375) !important;
+    --muted-foreground: oklch(0.552 0.016 285.938) !important;
+    --accent: oklch(0.967 0.001 286.375) !important;
+    --accent-foreground: oklch(0.21 0.006 285.885) !important;
+    --border: oklch(0.92 0.004 286.32) !important;
+    --input: oklch(0.92 0.004 286.32) !important;
+  }
+
+  html.dark .theme-default,
+  html.dark .theme-default-scaled {
+    --primary: var(--color-sky-600) !important;
+    --primary-foreground: var(--color-sky-50) !important;
+    --ring: var(--color-sky-600) !important;
+    --chart-1: var(--color-sky-600) !important;
+    --chart-2: var(--color-sky-500) !important;
+    --chart-3: var(--color-sky-800) !important;
+    --chart-4: var(--color-sky-300) !important;
+    --chart-5: var(--color-sky-700) !important;
+  }
+
+  html.dark .theme-blue,
+  html.dark .theme-blue-scaled {
+    --primary: var(--color-blue-600) !important;
+    --primary-foreground: var(--color-blue-50) !important;
+    --ring: var(--color-blue-600) !important;
+    --chart-1: var(--color-blue-600) !important;
+    --chart-2: var(--color-blue-500) !important;
+    --chart-3: var(--color-blue-800) !important;
+    --chart-4: var(--color-blue-300) !important;
+    --chart-5: var(--color-blue-700) !important;
+  }
+
+  html.dark .theme-green,
+  html.dark .theme-green-scaled {
+    --primary: var(--color-lime-600) !important;
+    --primary-foreground: var(--color-lime-50) !important;
+    --ring: var(--color-lime-600) !important;
+    --chart-1: var(--color-lime-600) !important;
+    --chart-2: var(--color-lime-500) !important;
+    --chart-3: var(--color-green-800) !important;
+    --chart-4: var(--color-lime-300) !important;
+    --chart-5: var(--color-green-700) !important;
+  }
+
+  html.dark .theme-amber,
+  html.dark .theme-amber-scaled {
+    --primary: var(--color-amber-600) !important;
+    --primary-foreground: var(--color-amber-50) !important;
+    --ring: var(--color-amber-600) !important;
+    --chart-1: var(--color-amber-600) !important;
+    --chart-2: var(--color-amber-500) !important;
+    --chart-3: var(--color-amber-800) !important;
+    --chart-4: var(--color-amber-300) !important;
+    --chart-5: var(--color-amber-700) !important;
+  }
+
+  html.dark .theme-mono,
+  html.dark .theme-mono-scaled {
+    --primary: var(--color-neutral-600) !important;
+    --primary-foreground: var(--color-neutral-50) !important;
+    --ring: var(--color-neutral-600) !important;
+    --chart-1: var(--color-neutral-500) !important;
+    --chart-2: var(--color-neutral-400) !important;
+    --chart-3: var(--color-neutral-700) !important;
+    --chart-4: var(--color-neutral-300) !important;
+    --chart-5: var(--color-neutral-600) !important;
+    --commercial-good: var(--color-neutral-700) !important;
+    --commercial-bad: var(--color-neutral-500) !important;
+  }
+
+  /* Hide unrelated UI components (sidebar, header, toolbar, navigation) */
+  aside,
+  [data-slot='sidebar-inset'] > header,
+  .sidebar-inset > header,
+  nav,
+  .no-print,
+  [data-sonner-toaster],
+  [data-sonner-toast],
+  .toaster,
+  [data-sidebar],
+  [data-sidebar='sidebar'],
+  .sidebar,
+  button,
+  kbd {
+    display: none !important;
+  }
+
+  /* Reset layout constraints and offsets */
+  html,
+  main,
+  .sidebar-inset,
+  [class*='sidebar-inset'],
+  [data-slot='sidebar-wrapper'],
+  [data-slot='sidebar-inset'] {
+    background-color: var(--background) !important;
+    color: var(--foreground) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    box-shadow: none !important;
+    display: block !important;
+  }
+
+  body {
+    background-color: var(--background) !important;
+    color: var(--foreground) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    box-shadow: none !important;
+    display: block !important;
+    zoom: 65% !important; /* Scale 1123px A4 canvas to fit printable width */
+  }
+
+  /* Reset outer scroll/border containers for the reports */
+  #quality-dashboard-report-wrapper,
+  #commercial-dashboard-report-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* Override Radix/shadcn ScrollArea constraint that cuts off print pages */
+  [data-radix-scroll-area-viewport],
+  [data-slot='scroll-area'],
+  [data-slot='scroll-area-viewport'],
+  [data-slot='scroll-area-viewport'] > div,
+  div[class*='ScrollArea'],
+  div[class*='scroll-area'] {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+  }
+
+  #quality-dashboard-report,
+  #commercial-dashboard-report {
+    max-width: 1123px !important;
+    width: 1123px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    outline: none !important;
+    background: var(--card) !important;
+    color: var(--card-foreground) !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  #commercial-dashboard-report .commercial-report-body {
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  #commercial-dashboard-report .commercial-decision-split .bg-muted {
+    background-color: var(--muted) !important;
+  }
+
+  #commercial-dashboard-report .recharts-responsive-container {
+    min-height: 5rem !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  #commercial-dashboard-report svg.recharts-surface {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  /* Force grid layouts to match desktop (lg:) behavior during print */
+
+  /* Quality Dashboard Grids */
+  #quality-dashboard-report .lg\:grid-cols-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 24px !important;
+  }
+  #quality-dashboard-report .grid-cols-2 {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+  }
+  #quality-dashboard-report .lg\:grid-cols-4 {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  /* Commercial Dashboard Grids */
+  #commercial-dashboard-report .grid-cols-12 {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+  #commercial-dashboard-report .lg\:col-span-4 {
+    grid-column: span 4 / span 4 !important;
+  }
+  #commercial-dashboard-report .lg\:col-span-6 {
+    grid-column: span 6 / span 6 !important;
+  }
+  #commercial-dashboard-report .lg\:grid-cols-4 {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+  }
+  #commercial-dashboard-report .lg\:grid-cols-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+  #commercial-dashboard-report .lg\:col-span-2 {
+    grid-column: span 2 / span 2 !important;
+  }
+
+  /* Report-scoped grids — do not rely on viewport lg: breakpoints when printing */
+  #commercial-dashboard-report .commercial-snapshot-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #commercial-dashboard-report .commercial-decision-split {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr) !important;
+    gap: 8px !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  #commercial-dashboard-report .commercial-decision-split [class*='bg-chart-'],
+  #commercial-dashboard-report .commercial-decision-split [class*='bg-threshold-'] {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  /* Shadcn card shells only — not Tailwind utilities like bg-card */
+  .card,
+  .glass-card,
+  [data-slot='card'] {
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    background-color: var(--card) !important;
+    color: var(--card-foreground) !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Commercial metric rows use bg-card (not .card) — allow natural page flow */
+  #commercial-dashboard-report .commercial-metrics-block,
+  #commercial-dashboard-report .metric-row,
+  #commercial-dashboard-report .metric-card {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #commercial-dashboard-report .metric-row-label span {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .report-header-logo {
+    display: flex !important;
+  }
+
+  .report-header-logo .report-logo-dark {
+    display: none !important;
+  }
+
+  .report-header-logo .report-logo-light {
+    display: block !important;
+  }
+
+  .dark .report-header-logo .report-logo-light {
+    display: none !important;
+  }
+
+  .dark .report-header-logo .report-logo-dark {
+    display: block !important;
+  }
+
+  .report-header-logo img {
+    max-height: 24px !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  #quality-dashboard-report .recharts-responsive-container {
+    height: 180px !important;
+  }
+}

@@ -1,0 +1,228 @@
+body {
+  @apply overscroll-none bg-transparent;
+}
+
+:root {
+  --font-sans: var(--font-inter);
+  --header-height: calc(var(--spacing) * 12 + 1px);
+}
+
+.theme-scaled {
+  @media (min-width: 1024px) {
+    --radius: 0.6rem;
+    --text-lg: 1.05rem;
+    --text-base: 0.85rem;
+    --text-sm: 0.8rem;
+    --spacing: 0.222222rem;
+  }
+
+  [data-slot='card'] {
+    --spacing: 0.16rem;
+  }
+
+  [data-slot='select-trigger'],
+  [data-slot='toggle-group-item'] {
+    --spacing: 0.222222rem;
+  }
+}
+
+/* Sky — shadcn/Tailwind sky as the calm industrial default. */
+.theme-default,
+.theme-default-scaled {
+  --primary: var(--color-sky-600);
+  --primary-foreground: var(--color-sky-50);
+  --ring: var(--color-sky-600);
+  --chart-1: var(--color-sky-600);
+  --chart-2: var(--color-sky-500);
+  --chart-3: var(--color-sky-800);
+  --chart-4: var(--color-sky-300);
+  --chart-5: var(--color-sky-700);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-sky-600);
+  --sidebar-ring: var(--color-sky-600);
+}
+
+.dark .theme-default,
+.dark .theme-default-scaled {
+  --primary: var(--color-sky-400);
+  --primary-foreground: var(--color-sky-950);
+  --ring: var(--color-sky-400);
+  --chart-1: var(--color-sky-400);
+  --chart-2: var(--color-sky-500);
+  --chart-3: var(--color-sky-600);
+  --chart-4: var(--color-sky-700);
+  --chart-5: var(--color-sky-300);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-sky-400);
+  --sidebar-ring: var(--color-sky-400);
+}
+
+/* Blue accent — shift primary + entire chart palette together */
+.theme-blue,
+.theme-blue-scaled {
+  --primary: var(--color-blue-600);
+  --primary-foreground: var(--color-blue-50);
+  --ring: var(--color-blue-600);
+  --chart-1: var(--color-blue-600);
+  --chart-2: var(--color-blue-500);
+  --chart-3: var(--color-blue-800);
+  --chart-4: var(--color-blue-300);
+  --chart-5: var(--color-blue-700);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-blue-600);
+  --sidebar-ring: var(--color-blue-600);
+}
+
+.dark .theme-blue,
+.dark .theme-blue-scaled {
+  --primary: var(--color-blue-500);
+  --primary-foreground: var(--color-blue-50);
+  --ring: var(--color-blue-400);
+  --chart-1: var(--color-blue-400);
+  --chart-2: var(--color-blue-500);
+  --chart-3: var(--color-blue-600);
+  --chart-4: var(--color-blue-700);
+  --chart-5: var(--color-blue-300);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-blue-500);
+  --sidebar-ring: var(--color-blue-400);
+}
+
+/* Green accent */
+.theme-green,
+.theme-green-scaled {
+  --primary: var(--color-lime-600);
+  --primary-foreground: var(--color-lime-50);
+  --ring: var(--color-lime-600);
+  --chart-1: var(--color-lime-600);
+  --chart-2: var(--color-lime-500);
+  --chart-3: var(--color-green-800);
+  --chart-4: var(--color-lime-300);
+  --chart-5: var(--color-green-700);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-lime-600);
+  --sidebar-ring: var(--color-lime-600);
+}
+
+.dark .theme-green,
+.dark .theme-green-scaled {
+  --primary: var(--color-lime-500);
+  --primary-foreground: var(--color-lime-50);
+  --ring: var(--color-lime-400);
+  --chart-1: var(--color-lime-400);
+  --chart-2: var(--color-lime-500);
+  --chart-3: var(--color-green-600);
+  --chart-4: var(--color-green-700);
+  --chart-5: var(--color-lime-300);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-lime-500);
+  --sidebar-ring: var(--color-lime-400);
+}
+
+/* Amber accent */
+.theme-amber,
+.theme-amber-scaled {
+  --primary: var(--color-amber-600);
+  --primary-foreground: var(--color-amber-50);
+  --ring: var(--color-amber-600);
+  --chart-1: var(--color-amber-600);
+  --chart-2: var(--color-amber-500);
+  --chart-3: var(--color-amber-800);
+  --chart-4: var(--color-amber-300);
+  --chart-5: var(--color-amber-700);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-amber-600);
+  --sidebar-ring: var(--color-amber-600);
+}
+
+.dark .theme-amber,
+.dark .theme-amber-scaled {
+  --primary: var(--color-amber-500);
+  --primary-foreground: var(--color-amber-50);
+  --ring: var(--color-amber-400);
+  --chart-1: var(--color-amber-400);
+  --chart-2: var(--color-amber-500);
+  --chart-3: var(--color-amber-600);
+  --chart-4: var(--color-amber-700);
+  --chart-5: var(--color-amber-300);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-amber-500);
+  --sidebar-ring: var(--color-amber-400);
+}
+
+.theme-mono,
+.theme-mono-scaled {
+  --font-sans: var(--font-mono);
+  --primary: var(--color-neutral-600);
+  --primary-foreground: var(--color-neutral-50);
+  --ring: var(--color-neutral-600);
+  --chart-1: var(--color-neutral-500);
+  --chart-2: var(--color-neutral-400);
+  --chart-3: var(--color-neutral-700);
+  --chart-4: var(--color-neutral-300);
+  --chart-5: var(--color-neutral-600);
+  --commercial-good: var(--color-neutral-700);
+  --commercial-bad: var(--color-neutral-500);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-neutral-600);
+  --sidebar-ring: var(--color-neutral-600);
+
+  .rounded-xs,
+  .rounded-sm,
+  .rounded-md,
+  .rounded-lg,
+  .rounded-xl {
+    @apply !rounded-none;
+    border-radius: 0;
+  }
+
+  .shadow-xs,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl {
+    @apply !shadow-none;
+  }
+
+  [data-slot='toggle-group'],
+  [data-slot='toggle-group-item'] {
+    @apply !rounded-none !shadow-none;
+  }
+}
+
+.dark .theme-mono,
+.dark .theme-mono-scaled {
+  --primary: var(--color-neutral-500);
+  --primary-foreground: var(--color-neutral-50);
+  --ring: var(--color-neutral-400);
+  --chart-1: var(--color-neutral-400);
+  --chart-2: var(--color-neutral-500);
+  --chart-3: var(--color-neutral-600);
+  --chart-4: var(--color-neutral-700);
+  --chart-5: var(--color-neutral-300);
+  --commercial-good: var(--color-neutral-300);
+  --commercial-bad: var(--color-neutral-500);
+  --threshold-within: var(--chart-2);
+  --threshold-near: var(--chart-1);
+  --threshold-above: var(--chart-3);
+  --sidebar-primary: var(--color-neutral-500);
+  --sidebar-ring: var(--color-neutral-400);
+}
