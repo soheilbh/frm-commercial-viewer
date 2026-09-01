@@ -1,10 +1,9 @@
 # FRM Commercial Dashboard viewer — standalone Next.js (saved weekly reports only).
-# Portainer: stack from Git repo, rebuild on deploy.
+# Portainer: Git repo → docker-compose.yml → redeploy (single file, no extra yml).
 # Local: http://localhost:8092/?year=2026&week=26
 #
-# Production (same VM as frm-ai): use docker-compose.frm-network.yml and
-#   FRM_API_BASE_URL=http://backend:8000
-# Do NOT use :18443 here — that is the public nginx HTTPS URL for browsers only.
+# Requires frm-ai stack running first (creates network frm_ai_frm-ai-network).
+# Calls frm-api as http://backend:8000 on that Docker network (not :18443 nginx).
 
 name: frm_commercial_viewer
 
@@ -18,8 +17,15 @@ services:
     ports:
       - "8092:8093"
     environment:
-      FRM_API_BASE_URL: ${FRM_API_BASE_URL:-http://host.docker.internal:8000}
+      FRM_API_BASE_URL: ${FRM_API_BASE_URL:-http://backend:8000}
       FRM_COMMERCIAL_VIEWER_API_KEY: ${FRM_COMMERCIAL_VIEWER_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - frm-ai-network
     restart: unless-stopped
+
+networks:
+  frm-ai-network:
+    external: true
+    name: ${FRM_AI_NETWORK:-frm_ai_frm-ai-network}
