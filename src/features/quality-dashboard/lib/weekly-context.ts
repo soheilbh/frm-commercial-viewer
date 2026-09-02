@@ -59,6 +59,7 @@ export type CompositionAreaPoint = {
   weekLabel: string;
   timeLabel?: string;
   isSelectedWeek?: boolean;
+  hasData?: boolean;
   /** Sum of grouped category shares from the API before re-normalization to 100%. */
   classifiedRawTotal: number;
 } & Record<FeedstockStackKey, number>;
@@ -603,7 +604,7 @@ function formatComparisonDiff(
 ): string | null {
   if (diff === null || diff === undefined) return null;
   const dec =
-    metricId === 'chlorine' ? 3 : metricId === 'feed_volume' ? 2 : metricId.includes('moisture') ? 1 : 2;
+    metricId === 'chlorine' ? 2 : metricId === 'feed_volume' ? 2 : metricId.includes('moisture') ? 1 : 2;
   const u = (unit ?? '%').trim();
   const suffix = u === '%' ? 'pp' : u;
   return `${diff > 0 ? '+' : ''}${diff.toFixed(dec)} ${suffix}`;
@@ -742,6 +743,7 @@ export type DailyBarPoint = {
   isLast: boolean;
   timeLabel?: string;
   isSelectedWeek?: boolean;
+  hasData?: boolean;
 };
 
 /** 12-week trend charts — one bar per calendar week. */
@@ -749,7 +751,237 @@ export const TREND_WEEKS = 12;
 /** Shift-level readings per week (3 shifts × 7 days). */
 export const THIS_WEEK_SHIFTS = 21;
 const SHIFTS_PER_DAY = 3;
-const SHIFT_HOURS_AMSTERDAM = [0, 8, 16] as const;
+const LEGACY_SHIFT_HOURS = [0, 8, 16] as const;
+const PLANT_SHIFT_HOURS = [7, 15, 23] as const;
+
+export function getChartBucketStartHour(
+  report?: CommercialReportPayload | { calculation_config?: Partial<{ chart_bucket_start_hour?: number }> } | null
+): number {
+  const hour = report?.calculation_config?.chart_bucket_start_hour;
+  if (hour === undefined || hour === null) return 0;
+  return Number(hour);
+}
+
+export function shiftHoursForStartHour(startHour: number): readonly number[] {
+  return startHour === 0 ? LEGACY_SHIFT_HOURS : PLANT_SHIFT_HOURS;
+}
+
+export function formatChartShiftLabel(startHour: number): string {
+  const hours = shiftHoursForStartHour(startHour)
+    .map((h) => `${String(h).padStart(2, '0')}:00`)
+    .join(', ');
+  return startHour === 0 ? `shifts at ${hours}` : `plant shifts at ${hours}`;
+}
+
+export function getDailyBucketStartHour(
+  report?: CommercialReportPayload | { calculation_config?: Partial<{ chart_bucket_start_hour?: number; daily_bucket_start_hour?: number }> } | null
+): number {
+  const dailyHour = report?.calculation_config?.daily_bucket_start_hour;
+  if (dailyHour !== undefined && dailyHour !== null) return Number(dailyHour);
+  return getChartBucketStartHour(report) === 0 ? 0 : 23;
+}
+
+export function formatDailyBucketLabel(dailyStartHour: number): string {
+  if (dailyStartHour === 0) return 'calendar days from 00:00';
+  return `operational days from ${String(dailyStartHour).padStart(2, '0')}:00 to ${String(dailyStartHour).padStart(2, '0')}:00 (3 plant shifts)`;
+}
+
+export function formatWeekBoundaryLabel(startHour: number): string {
+  if (startHour === 0) return 'week runs Mon 00:00–Mon 00:00 Amsterdam time';
+  return 'week runs Sun 23:00–Sun 23:00 Amsterdam time';
+}
+
+function utcDayKeyFromDate(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Plant week for ISO anchor: Sun 23:00 before Monday → Sun 23:00 on ISO Sunday (exclusive end). */
+export function plantWeekBounds(anchorWeekKey: string): { start: string; end: string } {
+  const { year, week } = parseWeekKey(anchorWeekKey);
+  const mondayUtc = getMondayOfISOWeek(year, week);
+  const sundayBefore = new Date(mondayUtc);
+  sundayBefore.setUTCDate(mondayUtc.getUTCDate() - 1);
+  const isoSunday = new Date(mondayUtc);
+  isoSunday.setUTCDate(mondayUtc.getUTCDate() + 6);
+  return {
+    start: shiftTimeForDay(utcDayKeyFromDate(sundayBefore), 23),
+    end: shiftTimeForDay(utcDayKeyFromDate(isoSunday), 23)
+  };
+}
+
+export function isInPlantWeek(time: string, anchorWeekKey: string, startHour: number): boolean {
+  if (startHour === 0) return isoWeekKey(time) === anchorWeekKey;
+  const { start, end } = plantWeekBounds(anchorWeekKey);
+  return time >= start && time < end;
+}
+
+function operationalDayKey(time: string, dailyStartHour: number): string {
+  if (dailyStartHour === 0) return amsterdamDayKey(time);
+  const dayKey = amsterdamDayKey(time);
+  if (amsterdamParts(time).hour < dailyStartHour) return previousAmsterdamDayKey(dayKey);
+  return dayKey;
+}
+
+function previousAmsterdamDayKey(dayKey: string): string {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const prev = new Date(Date.UTC(year, month - 1, day));
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  return `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}-${String(prev.getUTCDate()).padStart(2, '0')}`;
+}
+
+function amsterdamShiftHour(time: string, startHour: number): number {
+  const hour = amsterdamParts(time).hour;
+  if (startHour === 0) {
+    if (hour < 8) return 0;
+    if (hour < 16) return 8;
+    return 16;
+  }
+  if (hour >= 23 || hour < 7) return 23;
+  if (hour < 15) return 7;
+  return 15;
+}
+
+function shiftDayKeyForSlot(time: string, startHour: number): string {
+  const dayKey = amsterdamDayKey(time);
+  if (startHour !== 0 && amsterdamParts(time).hour < 7) {
+    return previousAmsterdamDayKey(dayKey);
+  }
+  return dayKey;
+}
+
+function shiftSlotKey(time: string, startHour: number): string {
+  return `${shiftDayKeyForSlot(time, startHour)}-${amsterdamShiftHour(time, startHour)}`;
+}
+
+/** Canonical 21 shift timestamps for the plant week (Sun 23 → Sun 23). */
+function anchorWeekShiftTimes(anchorWeekKey: string, startHour: number): string[] {
+  if (startHour === 0) {
+    const { year, week } = parseWeekKey(anchorWeekKey);
+    const mondayUtc = getMondayOfISOWeek(year, week);
+    const times: string[] = [];
+    for (let dayOffset = 0; dayOffset < THIS_WEEK_DAYS; dayOffset += 1) {
+      const day = new Date(mondayUtc);
+      day.setUTCDate(mondayUtc.getUTCDate() + dayOffset);
+      const dayKey = utcDayKeyFromDate(day);
+      for (const hour of LEGACY_SHIFT_HOURS) {
+        times.push(shiftTimeForDay(dayKey, hour));
+      }
+    }
+    return times;
+  }
+
+  const { year, week } = parseWeekKey(anchorWeekKey);
+  const mondayUtc = getMondayOfISOWeek(year, week);
+  const sundayBefore = new Date(mondayUtc);
+  sundayBefore.setUTCDate(mondayUtc.getUTCDate() - 1);
+  const isoSunday = new Date(mondayUtc);
+  isoSunday.setUTCDate(mondayUtc.getUTCDate() + 6);
+
+  const times: string[] = [shiftTimeForDay(utcDayKeyFromDate(sundayBefore), 23)];
+
+  for (let dayOffset = 0; dayOffset < 6; dayOffset += 1) {
+    const day = new Date(mondayUtc);
+    day.setUTCDate(mondayUtc.getUTCDate() + dayOffset);
+    const dayKey = utcDayKeyFromDate(day);
+    for (const hour of [7, 15, 23] as const) {
+      times.push(shiftTimeForDay(dayKey, hour));
+    }
+  }
+
+  times.push(shiftTimeForDay(utcDayKeyFromDate(isoSunday), 7));
+  times.push(shiftTimeForDay(utcDayKeyFromDate(isoSunday), 15));
+
+  return times;
+}
+
+function emptyCompositionShares(): Record<FeedstockStackKey, number> {
+  return FEEDSTOCK_STACK_KEYS.reduce(
+    (acc, key) => {
+      acc[key] = 0;
+      return acc;
+    },
+    {} as Record<FeedstockStackKey, number>
+  );
+}
+
+function fillAnchorWeekScalarShifts(
+  anchorWeekKey: string,
+  points: { time: string; value: number }[],
+  startHour: number
+): { time: string; value: number; hasData: boolean }[] {
+  const bySlot = new Map<string, { time: string; value: number }>();
+  for (const point of points) {
+    bySlot.set(shiftSlotKey(point.time, startHour), point);
+  }
+
+  return anchorWeekShiftTimes(anchorWeekKey, startHour).map((time) => {
+    const hit = bySlot.get(shiftSlotKey(time, startHour));
+    if (hit) {
+      return { time, value: hit.value, hasData: true };
+    }
+    return { time, value: 0, hasData: false };
+  });
+}
+
+function fillAnchorWeekThroughputShifts(
+  anchorWeekKey: string,
+  shifts: CommercialThroughputDay[],
+  startHour: number
+): Array<CommercialThroughputDay & { hasData: boolean }> {
+  const bySlot = new Map<string, CommercialThroughputDay>();
+  for (const shift of shifts) {
+    bySlot.set(shiftSlotKey(shift.day_start, startHour), shift);
+  }
+
+  return anchorWeekShiftTimes(anchorWeekKey, startHour).map((time) => {
+    const hit = bySlot.get(shiftSlotKey(time, startHour));
+    if (hit) {
+      return { ...hit, day_start: time, hasData: true };
+    }
+    return {
+      day_label: dayLabelFromTime(time),
+      day_start: time,
+      feed_t: 0,
+      hasData: false
+    };
+  });
+}
+
+function fillAnchorWeekCompositionShifts(
+  anchorWeekKey: string,
+  points: { time: string; values: Record<string, number> }[],
+  startHour: number
+): CompositionAreaPoint[] {
+  const bySlot = new Map<string, { time: string; values: Record<string, number> }>();
+  for (const point of points) {
+    bySlot.set(shiftSlotKey(point.time, startHour), point);
+  }
+
+  const times = anchorWeekShiftTimes(anchorWeekKey, startHour);
+  return times.map((time, idx, arr) => {
+    const hit = bySlot.get(shiftSlotKey(time, startHour));
+    const edgeTimes = arr.map((slotTime) => ({ time: slotTime }));
+    if (hit) {
+      return {
+        idx,
+        label: weekEdgeDayLabel(idx, edgeTimes),
+        weekLabel: weekEdgeDayLabel(idx, edgeTimes),
+        timeLabel: formatHoverShift(time),
+        hasData: true,
+        ...categorySharesFromComposition(hit.values)
+      };
+    }
+    return {
+      idx,
+      label: weekEdgeDayLabel(idx, edgeTimes),
+      weekLabel: weekEdgeDayLabel(idx, edgeTimes),
+      timeLabel: formatHoverShift(time),
+      hasData: false,
+      classifiedRawTotal: 0,
+      ...emptyCompositionShares()
+    };
+  });
+}
 
 export const THIS_WEEK_DAYS = 7;
 /** Display window: prior 12 complete weeks plus the selected/report week. */
@@ -766,6 +998,9 @@ export type DualMetricBarPoint = {
   primary: number;
   secondary: number;
   isSelectedWeek?: boolean;
+  hasData?: boolean;
+  primaryHasData?: boolean;
+  secondaryHasData?: boolean;
 };
 
 function weekLabelFromTime(time: string): string {
@@ -810,7 +1045,8 @@ function shiftTimeForDay(day: string, hour: number): string {
 /** When only one reading exists per day, expand to 3 shift slots (matches chlorine layout). */
 function expandDailyScalarsToShifts<T extends { time: string }>(
   points: T[],
-  clone: (point: T, time: string) => T
+  clone: (point: T, time: string) => T,
+  startHour: number
 ): T[] {
   const byDay = new Map<string, T[]>();
   for (const p of points) {
@@ -828,7 +1064,7 @@ function expandDailyScalarsToShifts<T extends { time: string }>(
       continue;
     }
     if (dayPts.length === 1) {
-      for (const hour of SHIFT_HOURS_AMSTERDAM) {
+      for (const hour of shiftHoursForStartHour(startHour)) {
         out.push(clone(dayPts[0], shiftTimeForDay(day, hour)));
       }
     }
@@ -836,7 +1072,7 @@ function expandDailyScalarsToShifts<T extends { time: string }>(
   return out;
 }
 
-function expandDailyThroughputToShifts(days: CommercialThroughputDay[]): CommercialThroughputDay[] {
+function expandDailyThroughputToShifts(days: CommercialThroughputDay[], startHour: number): CommercialThroughputDay[] {
   const byDay = new Map<string, CommercialThroughputDay[]>();
   for (const d of days) {
     const day = amsterdamDayKey(d.day_start);
@@ -854,7 +1090,7 @@ function expandDailyThroughputToShifts(days: CommercialThroughputDay[]): Commerc
     }
     if (dayPts.length === 1) {
       const base = dayPts[0];
-      for (const hour of SHIFT_HOURS_AMSTERDAM) {
+      for (const hour of shiftHoursForStartHour(startHour)) {
         out.push({
           day_label: base.day_label,
           day_start: shiftTimeForDay(day, hour),
@@ -869,38 +1105,43 @@ function expandDailyThroughputToShifts(days: CommercialThroughputDay[]): Commerc
 function normalizeScalarWeekShifts(
   report: CommercialReportPayload,
   points: { time: string; value: number | null }[]
-): { time: string; value: number }[] {
+): { time: string; value: number; hasData: boolean }[] {
   const anchor = getAnchorWeekKey(report);
+  const startHour = getChartBucketStartHour(report);
   const all = points
     .filter((p): p is { time: string; value: number } => p.value != null)
     .filter((p) => weekKeyLte(isoWeekKey(p.time), anchor))
     .sort((a, b) => a.time.localeCompare(b.time));
 
-  if (!all.length) return [];
-
-  const inWeek = all.filter((p) => isoWeekKey(p.time) === anchor);
-  if (inWeek.length > 0) {
-    const pool = isDailyOnlyTimeSeries(inWeek)
-      ? expandDailyScalarsToShifts(inWeek, (p, time) => ({ time, value: p.value }))
-      : inWeek;
-    return pool.slice(-THIS_WEEK_SHIFTS);
+  if (!all.length) {
+    return fillAnchorWeekScalarShifts(anchor, [], startHour);
   }
 
-  return all.slice(-THIS_WEEK_SHIFTS);
+  const inWeek = all.filter((p) => isInPlantWeek(p.time, anchor, startHour));
+  let pool: { time: string; value: number }[];
+  if (inWeek.length > 0) {
+    pool = isDailyOnlyTimeSeries(inWeek)
+      ? expandDailyScalarsToShifts(inWeek, (p, time) => ({ time, value: p.value }), startHour)
+      : inWeek;
+  } else {
+    pool = all.slice(-THIS_WEEK_SHIFTS);
+  }
+
+  return fillAnchorWeekScalarShifts(anchor, pool, startHour);
 }
 
 /** Up to 21 shift readings for the selected ISO week. */
 function shiftPointsForSelectedWeek(
   report: CommercialReportPayload,
   points: { time: string; value: number | null }[]
-): { time: string; value: number }[] {
+): { time: string; value: number; hasData: boolean }[] {
   return normalizeScalarWeekShifts(report, points);
 }
 
 function shiftPointsInAnchorWeek(
   report: CommercialReportPayload,
   metricId: string
-): { time: string; value: number }[] {
+): { time: string; value: number; hasData: boolean }[] {
   return shiftPointsForSelectedWeek(report, getRawDailyPoints(report, metricId));
 }
 
@@ -913,13 +1154,14 @@ function metricUsesShiftAveraging(metricId: string): boolean {
   );
 }
 
-/** Collapse shift-level readings (e.g. chlorine 3×/day) to one daily average. */
+/** Collapse shift-level readings to one daily average (calendar or operational day). */
 function averagePointsByDay(
-  points: { time: string; value: number }[]
+  points: { time: string; value: number }[],
+  dailyStartHour = 0
 ): { time: string; value: number }[] {
   const byDay = new Map<string, { sum: number; count: number; time: string }>();
   for (const p of points) {
-    const dayKey = amsterdamDayKey(p.time);
+    const dayKey = operationalDayKey(p.time, dailyStartHour);
     const row = byDay.get(dayKey) ?? { sum: 0, count: 0, time: p.time };
     row.sum += p.value;
     row.count += 1;
@@ -1139,12 +1381,13 @@ export function getDailyTrendBarData(
   );
 
   const anchor = getAnchorWeekKey(report);
+  const dailyStartHour = getDailyBucketStartHour(report);
   const valid = dailyPoints
     .filter((p) => weekKeyLte(isoWeekKey(p.time), anchor))
     .sort((a, b) => a.time.localeCompare(b.time));
 
   const processedPoints = metricUsesShiftAveraging(metricId)
-    ? averagePointsByDay(valid)
+    ? averagePointsByDay(valid, dailyStartHour)
     : valid;
 
   const sliced = processedPoints.slice(-TREND_DISPLAY_DAYS);
@@ -1173,7 +1416,9 @@ export function getThisWeekDailyValues(
   report: CommercialReportPayload,
   metricId: string
 ): number[] {
-  return shiftPointsInAnchorWeek(report, metricId).map((p) => p.value);
+  return shiftPointsInAnchorWeek(report, metricId)
+    .filter((p) => p.hasData)
+    .map((p) => p.value);
 }
 
 /** Selected-week shift bars (≈21) — labels on first/last day of week only. */
@@ -1188,6 +1433,7 @@ export function getThisWeekDailyBarData(
     value: p.value,
     weekLabel: weekEdgeDayLabel(idx, arr),
     timeLabel: formatHoverShift(p.time),
+    hasData: p.hasData,
     isLast: idx === arr.length - 1
   }));
 }
@@ -1195,17 +1441,20 @@ export function getThisWeekDailyBarData(
 /** Input + output moisture — prior 12 complete weeks + selected week daily trend. */
 export function buildMoistureDailyTrendData(report: CommercialReportPayload): DualMetricBarPoint[] {
   const anchor = getAnchorWeekKey(report);
+  const dailyStartHour = getDailyBucketStartHour(report);
   const inputDaily = averagePointsByDay(
     getRawDailyPoints(report, 'input_moisture').filter(
       (p): p is { time: string; value: number } =>
         p.value != null && weekKeyLte(isoWeekKey(p.time), anchor)
-    )
+    ),
+    dailyStartHour
   );
   const outputDaily = averagePointsByDay(
     getRawDailyPoints(report, 'output_moisture').filter(
       (p): p is { time: string; value: number } =>
         p.value != null && weekKeyLte(isoWeekKey(p.time), anchor)
-    )
+    ),
+    dailyStartHour
   );
   const byDay = new Map<string, { time: string; label: string; primary: number; secondary: number }>();
 
@@ -1242,11 +1491,12 @@ export function buildThroughputDailyTrendData(
   report: CommercialReportPayload
 ): { idx: number; label: string; weekLabel: string; timeLabel?: string; feed: number; isSelectedWeek?: boolean }[] {
   const anchor = getAnchorWeekKey(report);
+  const dailyStartHour = getDailyBucketStartHour(report);
   const byDay = new Map<string, { time: string; label: string; primary: number; secondary: number }>();
 
   for (const d of report.throughput_daily ?? []) {
     if (!weekKeyLte(isoWeekKey(d.day_start), anchor)) continue;
-    const key = amsterdamDayKey(d.day_start);
+    const key = operationalDayKey(d.day_start, dailyStartHour);
     const row = byDay.get(key) ?? {
       time: d.day_start,
       label: dayLabelFromTime(d.day_start),
@@ -1280,20 +1530,16 @@ export function buildMoistureTrendData(report: CommercialReportPayload): DualMet
 export function buildMoistureDailyData(report: CommercialReportPayload): DualMetricBarPoint[] {
   const inputShifts = shiftPointsInAnchorWeek(report, 'input_moisture');
   const outputShifts = shiftPointsInAnchorWeek(report, 'output_moisture');
-  const primaryByTime = new Map(inputShifts.map((p) => [p.time, p.value]));
-  const secondaryByTime = new Map(outputShifts.map((p) => [p.time, p.value]));
-  const times = Array.from(
-    new Set([...Array.from(primaryByTime.keys()), ...Array.from(secondaryByTime.keys())])
-  ).sort();
-  const slice = times.slice(-THIS_WEEK_SHIFTS);
 
-  return slice.map((time, idx, arr) => ({
+  return inputShifts.map((point, idx, arr) => ({
     idx,
-    label: weekEdgeDayLabel(idx, arr.map((t) => ({ time: t }))),
-    weekLabel: weekEdgeDayLabel(idx, arr.map((t) => ({ time: t }))),
-    timeLabel: formatHoverShift(time),
-    primary: primaryByTime.get(time) ?? 0,
-    secondary: secondaryByTime.get(time) ?? 0
+    label: weekEdgeDayLabel(idx, arr),
+    weekLabel: weekEdgeDayLabel(idx, arr),
+    timeLabel: formatHoverShift(point.time),
+    primary: point.value,
+    secondary: outputShifts[idx]?.value ?? 0,
+    primaryHasData: point.hasData,
+    secondaryHasData: outputShifts[idx]?.hasData ?? false
   }));
 }
 
@@ -1301,7 +1547,7 @@ export function buildMoistureDailyData(report: CommercialReportPayload): DualMet
 export function buildThroughputBarData(
   report: CommercialReportPayload,
   window: 'trend' | 'week'
-): { idx: number; label: string; weekLabel: string; timeLabel?: string; isSelectedWeek?: boolean; feed: number }[] {
+): { idx: number; label: string; weekLabel: string; timeLabel?: string; isSelectedWeek?: boolean; feed: number; hasData?: boolean }[] {
   if (window === 'trend') {
     const anchor = getAnchorWeekKey(report);
     return weeklyPointsUpToAnchor(report, 'feed_volume').slice(-TREND_DISPLAY_WEEKS).map((point, idx) => ({
@@ -1315,29 +1561,32 @@ export function buildThroughputBarData(
   }
 
   const anchor = getAnchorWeekKey(report);
+  const startHour = getChartBucketStartHour(report);
   const allShifts = (report.throughput_daily ?? [])
     .filter((d) => weekKeyLte(isoWeekKey(d.day_start), anchor))
     .sort((a, b) => a.day_start.localeCompare(b.day_start));
 
-  if (!allShifts.length) return [];
-
-  const inWeek = allShifts.filter((d) => isoWeekKey(d.day_start) === anchor);
-  let shifts: typeof allShifts;
+  const inWeek = allShifts.filter((d) => isInPlantWeek(d.day_start, anchor, startHour));
+  let pool: CommercialThroughputDay[];
   if (inWeek.length > 0) {
-    shifts = isDailyOnlyTimeSeries(inWeek.map((d) => ({ time: d.day_start })))
-      ? expandDailyThroughputToShifts(inWeek)
+    pool = isDailyOnlyTimeSeries(inWeek.map((d) => ({ time: d.day_start })))
+      ? expandDailyThroughputToShifts(inWeek, startHour)
       : inWeek;
-    shifts = shifts.slice(-THIS_WEEK_SHIFTS);
+  } else if (allShifts.length > 0) {
+    pool = allShifts.slice(-THIS_WEEK_SHIFTS);
   } else {
-    shifts = allShifts.slice(-THIS_WEEK_SHIFTS);
+    pool = [];
   }
+
+  const shifts = fillAnchorWeekThroughputShifts(anchor, pool, startHour);
 
   return shifts.map((d, idx, arr) => ({
     idx,
     label: weekEdgeDayLabel(idx, arr.map((s) => ({ time: s.day_start }))),
     weekLabel: weekEdgeDayLabel(idx, arr.map((s) => ({ time: s.day_start }))),
     timeLabel: formatHoverShift(d.day_start),
-    feed: d.feed_t ?? 0
+    feed: d.feed_t ?? 0,
+    hasData: d.hasData
   }));
 }
 
@@ -1723,12 +1972,13 @@ function compositionWeeklyPoints(
 }
 
 function averageCompositionByDay(
-  points: Array<{ time: string; values: Record<string, number> }>
+  points: Array<{ time: string; values: Record<string, number> }>,
+  dailyStartHour = 0
 ): Array<{ time: string; values: Record<string, number> }> {
   const byDay = new Map<string, { time: string; mats: Record<string, number[]> }>();
 
   for (const p of points) {
-    const key = amsterdamDayKey(p.time);
+    const key = operationalDayKey(p.time, dailyStartHour);
     const row = byDay.get(key) ?? { time: p.time, mats: {} };
     for (const [mat, val] of Object.entries(p.values)) {
       (row.mats[mat] ??= []).push(val);
@@ -1753,8 +2003,10 @@ export function buildCompositionDailyTrendData(
   report: CommercialReportPayload
 ): CompositionAreaPoint[] {
   const anchor = getAnchorWeekKey(report);
+  const dailyStartHour = getDailyBucketStartHour(report);
   const daily = averageCompositionByDay(
-    (report.composition_points ?? []).filter((p) => weekKeyLte(isoWeekKey(p.time), anchor))
+    (report.composition_points ?? []).filter((p) => weekKeyLte(isoWeekKey(p.time), anchor)),
+    dailyStartHour
   ).slice(-TREND_DISPLAY_DAYS);
 
   const seenWeeks = new Set<string>();
@@ -1802,30 +2054,26 @@ export function buildCompositionAreaData(
   }
 
   const anchor = getAnchorWeekKey(report);
+  const startHour = getChartBucketStartHour(report);
   const allComp = (report.composition_points ?? [])
     .filter((p) => weekKeyLte(isoWeekKey(p.time), anchor))
     .sort((a, b) => a.time.localeCompare(b.time));
 
-  if (!allComp.length) return [];
+  if (!allComp.length) return fillAnchorWeekCompositionShifts(anchor, [], startHour);
 
-  const inWeek = allComp.filter((p) => isoWeekKey(p.time) === anchor);
-  let compShifts: typeof allComp;
+  const inWeek = allComp.filter((p) => isInPlantWeek(p.time, anchor, startHour));
+  let pool: typeof allComp;
   if (inWeek.length > 0) {
-    compShifts = isDailyOnlyTimeSeries(inWeek)
-      ? expandDailyScalarsToShifts(inWeek, (p, time) => ({ time, values: p.values }))
+    pool = isDailyOnlyTimeSeries(inWeek)
+      ? expandDailyScalarsToShifts(inWeek, (p, time) => ({ time, values: p.values }), startHour)
       : inWeek;
-    compShifts = compShifts.slice(-THIS_WEEK_SHIFTS);
+  } else if (allComp.length > 0) {
+    pool = allComp.slice(-THIS_WEEK_SHIFTS);
   } else {
-    compShifts = allComp.slice(-THIS_WEEK_SHIFTS);
+    pool = [];
   }
 
-  return compShifts.map((point, idx, arr) => ({
-    idx,
-    label: weekEdgeDayLabel(idx, arr),
-    weekLabel: weekEdgeDayLabel(idx, arr),
-    timeLabel: formatHoverShift(point.time),
-    ...categorySharesFromComposition(point.values)
-  }));
+  return fillAnchorWeekCompositionShifts(anchor, pool, startHour);
 }
 
 export type WeeklyChangeCard = {
@@ -1843,7 +2091,7 @@ export function buildWeeklyChangeCards(report: CommercialReportPayload): WeeklyC
     const ctx = buildMetricContext(report, id);
     const c = getComparison(report, id);
     const diff = c?.difference ?? 0;
-    const dec = id === 'chlorine' ? 3 : id === 'input_moisture' || id === 'output_moisture' ? 1 : 2;
+    const dec = id === 'chlorine' ? 2 : id === 'input_moisture' || id === 'output_moisture' ? 1 : 2;
     const score = -diff;
     return {
       id,

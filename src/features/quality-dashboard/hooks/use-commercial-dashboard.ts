@@ -8,8 +8,19 @@ import {
 } from '@/features/quality-dashboard/lib/weekly-context';
 import { useCallback, useEffect, useState } from 'react';
 
+function getInitialWeekKey(): string {
+  if (typeof window === 'undefined') return getCompletedWeekKey();
+  const params = new URLSearchParams(window.location.search);
+  const year = params.get('year');
+  const week = params.get('week');
+  if (year && week) {
+    return `${year}-W${String(week).padStart(2, '0')}`;
+  }
+  return getCompletedWeekKey();
+}
+
 export function useCommercialDashboard() {
-  const [selectedWeekKey, setSelectedWeekKey] = useState<string>(() => getCompletedWeekKey());
+  const [selectedWeekKey, setSelectedWeekKey] = useState<string>(() => getInitialWeekKey());
   const [baseReport, setBaseReport] = useState<CommercialReportPayload | null>(null);
   const [savedGeneratedAt, setSavedGeneratedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

@@ -246,6 +246,8 @@ export type CommercialReportCalculationConfig = {
   version: number;
   sample_resolution: string;
   chart_bucket: string;
+  chart_bucket_start_hour: number;
+  daily_bucket_start_hour?: number;
   baseline_weeks: number;
   timezone: string;
   job_chunk_days: number;

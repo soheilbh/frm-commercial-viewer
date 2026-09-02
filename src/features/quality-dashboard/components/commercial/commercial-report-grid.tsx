@@ -45,7 +45,14 @@ import {
   diffToneClass,
   type ThresholdZones
 } from '@/features/quality-dashboard/lib/kpi-threshold-colors';
-import { THIS_WEEK_SHIFTS } from '@/features/quality-dashboard/lib/weekly-context';
+import {
+  formatChartShiftLabel,
+  formatDailyBucketLabel,
+  formatWeekBoundaryLabel,
+  getChartBucketStartHour,
+  getDailyBucketStartHour,
+  THIS_WEEK_SHIFTS
+} from '@/features/quality-dashboard/lib/weekly-context';
 import { cn } from '@/lib/utils';
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
 import {
@@ -516,6 +523,24 @@ function FooterRangeText({
   );
 }
 
+function formatTonnes(value: number): string {
+  return `${Math.round(value)} t`;
+}
+
+function formatTonnesSigned(value: number): string {
+  return `${value > 0 ? '+' : ''}${Math.round(value)} t`;
+}
+
+function formatTonnesRange(min: number, max: number): string {
+  return `${Math.round(min)}–${Math.round(max)} t`;
+}
+
+/** PVC share increase is undesirable — positive pp renders as negative tone. */
+function compositionDeltaTone(label: string, delta: number): string {
+  if (label === 'PVC') return diffToneClass(delta, { invert: true });
+  return diffToneClass(delta);
+}
+
 function numberRange(values: number[], decimals: number, suffix: string): string | null {
   const finite = values.filter((v) => Number.isFinite(v));
   if (!finite.length) return null;
@@ -529,7 +554,7 @@ function tonneRange(values: number[]): string | null {
   if (!finite.length) return null;
   const min = Math.min(...finite);
   const max = Math.max(...finite);
-  return `${Math.round(min).toLocaleString()}–${Math.round(max).toLocaleString()} t`;
+  return formatTonnesRange(min, max);
 }
 
 function qualityStatsRows({
@@ -977,18 +1002,20 @@ function VolumeSidebar({
             >
               <p className='truncate text-[10px] leading-none text-muted-foreground'>{row.label}</p>
               <p className={cn('mt-1 whitespace-nowrap font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight', row.valueTone ?? 'text-foreground')}>
-                  {rowVisible ? (row.valueText ??
+                {rowVisible
+                  ? (row.valueText ??
                     (row.display === 'tonnes'
-                    ? `${Math.round(row.value).toLocaleString()} t`
-                    : row.display === 'pct'
-                      ? `${row.value.toFixed(row.decimals ?? 0)}%`
-                      : `${row.value.toFixed(row.decimals ?? 1)} pp`)) : HIDDEN_VALUE}
+                      ? formatTonnes(row.value)
+                      : row.display === 'pct'
+                        ? `${row.value.toFixed(row.decimals ?? 0)}%`
+                        : `${row.value.toFixed(row.decimals ?? 1)} pp`))
+                  : HIDDEN_VALUE}
               </p>
               <p className={cn('mt-1 min-h-5 whitespace-nowrap font-mono text-[10px] font-semibold tabular-nums', diffTone)}>
                 {rowVisible ? (row.diffText ?? (diffVal != null ? (
                   <>
                     {diffVal > 0 ? '+' : ''}
-                    {row.display === 'tonnes' ? `${Math.round(diffVal).toLocaleString()} t` : `${diffVal.toFixed(1)} pp`}
+                    {row.display === 'tonnes' ? formatTonnesSigned(diffVal) : `${diffVal.toFixed(1)} pp`}
                   </>
                 ) : null)) : null}
               </p>
@@ -1022,7 +1049,7 @@ function buildVolumeSidebarRows(report: CommercialReportPayload): VolumeSidebarR
       label: 'Difference',
       display: 'tonnes',
       value: feedDiff ?? 0,
-      valueText: feedDiff != null ? signedValue(Math.round(feedDiff), 0, ' t') : '—',
+      valueText: feedDiff != null ? formatTonnesSigned(Math.round(feedDiff)) : '—',
       valueTone: qualityDeltaTone(feedDiff, false),
       diffText: 'vs 12W avg',
       diffPreference: 'higher-better'
@@ -1041,10 +1068,10 @@ function VolumeThroughputCard({ report, visible }: { report: CommercialReportPay
   const weekAvgLine = feedStats.avg != null
     ? [{ value: feedStats.avg / THIS_WEEK_SHIFTS, stroke: KPI_THRESHOLD_COLORS.near, dash: '5 4' }]
     : [];
-  const weekRange = tonneRange(weekData.map((d) => d.feed));
+  const weekRange = tonneRange(weekData.filter((d) => d.hasData !== false).map((d) => d.feed));
   const twelveWeekRange =
     feedStats.min != null && feedStats.max != null
-      ? `${Math.round(feedStats.min).toLocaleString()}–${Math.round(feedStats.max).toLocaleString()} t`
+      ? formatTonnesRange(feedStats.min, feedStats.max)
       : null;
 
   return (
@@ -1123,7 +1150,7 @@ function FeedstockShiftSummary({
       <ul className='grid flex-1 grid-cols-2'>
         {categories.map((c, index) => {
           const share = categorySharePct(categories, 'currentPct', c.label);
-          const diffTone = diffToneClass(c.delta);
+          const diffTone = compositionDeltaTone(c.label, c.delta);
           const dSign = c.delta > 0 ? '+' : '';
 
           return (
@@ -1188,7 +1215,7 @@ function FeedstockPanel({ report, visible }: { report: CommercialReportPayload; 
               <MetricChartMetricsRow>
                 {visible && topShift ? (
                   <p className='whitespace-nowrap font-mono text-[10px] font-semibold tabular-nums text-muted-foreground'>
-                    Largest Δ <span className={diffToneClass(topShift.delta)}>{topShift.delta > 0 ? '+' : ''}{topShift.delta.toFixed(1)} pp</span>
+                    Largest Δ <span className={compositionDeltaTone(topShift.label, topShift.delta)}>{topShift.delta > 0 ? '+' : ''}{topShift.delta.toFixed(1)} pp</span>
                   </p>
                 ) : (
                   <p className='font-mono text-[10px] font-semibold tabular-nums text-muted-foreground'>{HIDDEN_VALUE}</p>
@@ -1597,11 +1624,11 @@ function CommercialSnapshot({
     {
       label: 'Input volume',
       source: 'Incoming feed processed',
-      value: inputCurrent != null ? `${Math.round(inputCurrent).toLocaleString()} t` : '—',
-      delta: inputDelta != null ? `${inputDelta > 0 ? '+' : ''}${Math.round(inputDelta).toLocaleString()} t` : '—',
+      value: inputCurrent != null ? formatTonnes(inputCurrent) : '—',
+      delta: inputDelta != null ? formatTonnesSigned(inputDelta) : '—',
       deltaValue: inputDelta,
       deltaGood: favourableDelta(inputDelta, false),
-      avgLabel: inputAvg != null ? `${Math.round(inputAvg).toLocaleString()} t` : '—',
+      avgLabel: inputAvg != null ? formatTonnes(inputAvg) : '—',
       context: inputDelta == null
         ? 'Recorded incoming mass flow'
         : inputDelta >= 0
@@ -1625,11 +1652,11 @@ function CommercialSnapshot({
     {
       label: 'Chlorine',
       source: 'Pre-pelletizer quality',
-      value: cl.currentWeek != null ? `${cl.currentWeek.toFixed(3)}%` : '—',
-      delta: signedValue(clDelta, 3, ' pp'),
+      value: cl.currentWeek != null ? `${cl.currentWeek.toFixed(2)}%` : '—',
+      delta: signedValue(clDelta, 2, ' pp'),
       deltaValue: clDelta,
       deltaGood: favourableDelta(clDelta, true),
-      avgLabel: cl.avg12Week != null ? `${cl.avg12Week.toFixed(3)}%` : '—',
+      avgLabel: cl.avg12Week != null ? `${cl.avg12Week.toFixed(2)}%` : '—',
       context: `${clDist.abovePct}% above threshold 1.2%`,
       contextTone: clDist.abovePct > 0 ? ZONE_TEXT_CLASS.above : ZONE_TEXT_CLASS.within,
       visible: visibility.chlorine
@@ -1743,7 +1770,7 @@ function SpecificationCoverage({
         <SpecificationCoverageRow
           label='Chlorine'
           basis='Threshold 1.2%'
-          current={cl.currentWeek != null ? `avg ${cl.currentWeek.toFixed(3)}%` : 'no average'}
+          current={cl.currentWeek != null ? `avg ${cl.currentWeek.toFixed(2)}%` : 'no average'}
           dist={clDist}
           visible={visibility.chlorine}
         />
@@ -1788,7 +1815,7 @@ function commercialMovementItems(report: CommercialReportPayload, visibility: Co
       label: 'Chlorine',
       visible: visibility.chlorine,
       lowerIsBetter: true,
-      decimals: 3,
+      decimals: 2,
       unit: ' pp'
     },
     {
@@ -1808,7 +1835,7 @@ function commercialMovementItems(report: CommercialReportPayload, visibility: Co
     const formattedDiff = diff == null
       ? null
       : spec.unit.trim() === 't'
-        ? `${diff > 0 ? '+' : ''}${Math.round(diff).toLocaleString()} t`
+        ? formatTonnesSigned(diff)
         : `${diff > 0 ? '+' : ''}${diff.toFixed(spec.decimals)} pp`;
     const good = favourableDelta(diff ?? pct, spec.lowerIsBetter);
     return {
@@ -1907,10 +1934,12 @@ function CommercialDecisionLayer({
 }
 
 function ReportMethodNote({ report }: { report: CommercialReportPayload }) {
+  const startHour = getChartBucketStartHour(report);
+  const dailyStartHour = getDailyBucketStartHour(report);
   const note = [
     `W${report.week_number ?? '—'} is compared with the prior 12 complete weeks`,
     'trend panels show prior 12W plus this week',
-    'week runs Mon 00:00–Mon 00:00 Amsterdam time'
+    `${formatWeekBoundaryLabel(startHour)}; chart buckets use ${formatChartShiftLabel(startHour)}; daily trends use ${formatDailyBucketLabel(dailyStartHour)}`
   ].join(' · ');
 
   return (
@@ -2036,7 +2065,7 @@ export function CommercialReportGrid({
             { value: COMMERCIAL_CHLORINE_ZONES.okMax, stroke: KPI_THRESHOLD_COLORS.near },
             { value: COMMERCIAL_CHLORINE_ZONES.warnMax, stroke: KPI_THRESHOLD_COLORS.above }
           ]}
-          decimals={3}
+          decimals={2}
           trendWindow='daily-trend'
           visible={visibility.chlorine}
         />

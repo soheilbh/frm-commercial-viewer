@@ -48,9 +48,122 @@ import {
   Pie,
   PieChart,
   ReferenceLine,
+  Rectangle,
   XAxis,
   YAxis
 } from 'recharts';
+
+const EMPTY_SHIFT_BAR_HEIGHT = 6;
+
+type ShiftBarShapeProps = {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fill?: string;
+  fillOpacity?: number;
+  radius?: number | [number, number, number, number];
+  payload?: Record<string, unknown>;
+};
+
+function shiftSeriesHasData(payload: Record<string, unknown> | undefined, key?: 'primary' | 'secondary') {
+  if (!payload) return true;
+  if (key === 'primary') return payload.primaryHasData !== false;
+  if (key === 'secondary') return payload.secondaryHasData !== false;
+  return payload.hasData !== false;
+}
+
+function renderShiftBarShape(props: ShiftBarShapeProps, seriesKey?: 'primary' | 'secondary') {
+  const { x = 0, y = 0, width = 0, height = 0, fill, fillOpacity, radius, payload } = props;
+  if (!shiftSeriesHasData(payload, seriesKey)) {
+    return (
+      <rect
+        x={x}
+        y={y - EMPTY_SHIFT_BAR_HEIGHT}
+        width={width}
+        height={EMPTY_SHIFT_BAR_HEIGHT}
+        fill='var(--muted-foreground)'
+        fillOpacity={0.12}
+        stroke='var(--border)'
+        strokeDasharray='3 2'
+        rx={2}
+      />
+    );
+  }
+  return (
+    <Rectangle
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      fill={fill}
+      fillOpacity={fillOpacity}
+      radius={radius}
+    />
+  );
+}
+
+function formatShiftTooltipValue(
+  value: number,
+  payload: Record<string, unknown> | undefined,
+  seriesKey: 'primary' | 'secondary' | 'single',
+  formatValue: (value: number) => string
+) {
+  const hasData =
+    seriesKey === 'primary'
+      ? shiftSeriesHasData(payload, 'primary')
+      : seriesKey === 'secondary'
+        ? shiftSeriesHasData(payload, 'secondary')
+        : shiftSeriesHasData(payload);
+  if (!hasData) {
+    return (
+      <div className='flex flex-1 justify-between gap-4 w-full'>
+        <span className='text-muted-foreground'>Value</span>
+        <span className='font-medium text-muted-foreground'>No data</span>
+      </div>
+    );
+  }
+  return (
+    <div className='flex flex-1 justify-between gap-4 w-full'>
+      <span className='text-muted-foreground'>Value</span>
+      <span className='font-mono font-medium text-foreground'>{formatValue(value)}</span>
+    </div>
+  );
+}
+
+function MissingShiftOverlay({
+  data,
+  bottomOffset = 0,
+  leftPad = CHART_Y_AXIS_WIDTH,
+  rightPad = 4
+}: {
+  data: Array<{ idx?: number; hasData?: boolean }>;
+  bottomOffset?: number;
+  leftPad?: number;
+  rightPad?: number;
+}) {
+  if (!data.length || !data.some((row) => row.hasData === false)) return null;
+
+  return (
+    <>
+      {data.map((row, index) => {
+        if (row.hasData !== false) return null;
+        return (
+          <div
+            key={row.idx ?? index}
+            aria-hidden='true'
+            className='pointer-events-none absolute top-0 z-[1] border border-dashed border-muted-foreground/25 bg-muted/10'
+            style={{
+              bottom: bottomOffset,
+              left: `calc(${leftPad}px + (100% - ${leftPad + rightPad}px) * ${index / data.length})`,
+              width: `calc((100% - ${leftPad + rightPad}px) * ${1 / data.length})`
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
 
 type RefLine = { value: number; stroke: string; dash?: string };
 export type SummaryStatRow = {
@@ -809,17 +922,24 @@ export function KpiTrendChart({
                 const point = payload?.[0]?.payload;
                 return point?.timeLabel || point?.weekLabel || '';
               }}
-              formatter={(value) => {
-                const unit = metricId === 'feed_volume' ? ' t' : '%';
-                return (
-                  <div className='flex flex-1 justify-between gap-4 w-full'>
-                    <span className='text-muted-foreground'>Value</span>
-                    <span className='font-mono font-medium text-foreground'>
-                      {Number(value).toFixed(decimals)}{unit}
-                    </span>
-                  </div>
-                );
-              }}
+                formatter={(value, name, item) => {
+                  const payload = item?.payload as Record<string, unknown> | undefined;
+                  if (barWindow === 'week') {
+                    return formatShiftTooltipValue(Number(value), payload, 'single', (v) => {
+                      const unit = metricId === 'feed_volume' ? ' t' : '%';
+                      return `${v.toFixed(decimals)}${unit}`;
+                    });
+                  }
+                  const unit = metricId === 'feed_volume' ? ' t' : '%';
+                  return (
+                    <div className='flex flex-1 justify-between gap-4 w-full'>
+                      <span className='text-muted-foreground'>Value</span>
+                      <span className='font-mono font-medium text-foreground'>
+                        {Number(value).toFixed(decimals)}{unit}
+                      </span>
+                    </div>
+                  );
+                }}
             />
           }
         />
@@ -840,6 +960,7 @@ export function KpiTrendChart({
             barSize={density.maxBarSize}
             radius={density.radius}
             isAnimationActive={false}
+            shape={barWindow === 'week' ? (props) => renderShiftBarShape(props) : undefined}
           >
             {data.map((d) => (
               <Cell
@@ -856,6 +977,7 @@ export function KpiTrendChart({
             barSize={density.maxBarSize}
             radius={density.radius}
             isAnimationActive={false}
+            shape={barWindow === 'week' ? (props) => renderShiftBarShape(props) : undefined}
           >
             {data.map((d) => (
               <Cell
@@ -895,6 +1017,7 @@ export type ThroughputBarPoint = {
   timeLabel?: string;
   isSelectedWeek?: boolean;
   feed: number;
+  hasData?: boolean;
 };
 
 type DualBarMode = 'grouped' | 'stacked' | 'overlap';
@@ -978,7 +1101,7 @@ function GroupedDualBarChart({
   const density = getBarDensity(data.length, barWindow);
   const barSize = density.maxBarSize;
   const formatYTick = (v: number) =>
-    yDecimals != null ? v.toFixed(yDecimals) : Math.round(v).toLocaleString();
+    yDecimals != null ? v.toFixed(yDecimals) : String(Math.round(v));
 
   const xDataKey = useIdxAxis ? 'idx' : 'label';
   const showBottomLabels = useOverlapLayout && useIdxAxis;
@@ -1068,13 +1191,27 @@ function GroupedDualBarChart({
                   return point ? (point.timeLabel || point.label || '') : '';
                 }}
                 indicator={useOverlapLayout ? 'line' : 'dashed'}
-                formatter={(value, name) => {
+                formatter={(value, name, item) => {
                   const label =
                     config[name as keyof typeof config]?.label ?? String(name);
+                  const payload = item?.payload as Record<string, unknown> | undefined;
+                  const seriesKey =
+                    name === primaryKey ? 'primary' : name === secondaryKey ? 'secondary' : 'single';
+                  if (
+                    barWindow === 'week' &&
+                    !shiftSeriesHasData(payload, seriesKey === 'single' ? undefined : seriesKey)
+                  ) {
+                    return (
+                      <div className='flex flex-1 justify-between gap-4 w-full'>
+                        <span className='text-muted-foreground'>{label}</span>
+                        <span className='font-medium text-muted-foreground'>No data</span>
+                      </div>
+                    );
+                  }
                   const formatted =
                     yDecimals != null
                       ? `${Number(value).toFixed(yDecimals)}%`
-                      : Number(value).toLocaleString();
+                      : String(Math.round(Number(value)));
                   return (
                     <div className='flex flex-1 justify-between gap-4 w-full'>
                       <span className='text-muted-foreground'>{label}</span>
@@ -1106,6 +1243,9 @@ function GroupedDualBarChart({
               radius={density.radius}
               barSize={barSize}
               isAnimationActive={false}
+              shape={
+                isShiftWeek ? (props) => renderShiftBarShape(props, 'primary') : undefined
+              }
             >
               {data.map((d, i) => (
                 <Cell
@@ -1135,6 +1275,9 @@ function GroupedDualBarChart({
               radius={density.radius}
               barSize={barSize}
               isAnimationActive={false}
+              shape={
+                isShiftWeek ? (props) => renderShiftBarShape(props, 'secondary') : undefined
+              }
             >
               {data.map((d, i) => (
                 <Cell
@@ -1236,7 +1379,10 @@ export function MoistureGroupedBarChart({
     timeLabel: d.timeLabel,
     isSelectedWeek: d.isSelectedWeek,
     input: d.primary,
-    output: d.secondary
+    output: d.secondary,
+    hasData: d.hasData,
+    primaryHasData: d.primaryHasData,
+    secondaryHasData: d.secondaryHasData
   }));
 
   return (
@@ -1273,6 +1419,15 @@ function CompositionTooltipContent({
   if (!row) return null;
 
   const label = row.timeLabel || row.label || '';
+  if (row.hasData === false) {
+    return (
+      <div className='grid min-w-[8.5rem] gap-1 rounded-md border border-border/50 bg-background px-2 py-1.5 text-[10px] shadow-md'>
+        {label ? <p className='text-[11px] font-semibold leading-none'>{label}</p> : null}
+        <p className='text-muted-foreground'>No data</p>
+      </div>
+    );
+  }
+
   const hasFeed = row.classifiedRawTotal > 0;
 
   return (
@@ -1390,6 +1545,7 @@ export function FeedstockStackedAreaChart({
         rightPad={4}
         bottomOffset={chartWindow === 'trend' || chartWindow === 'daily-trend' ? 18 : 0}
       />
+      {isShiftWeek ? <MissingShiftOverlay data={data} leftPad={0} rightPad={4} /> : null}
     </div>
   );
 }
