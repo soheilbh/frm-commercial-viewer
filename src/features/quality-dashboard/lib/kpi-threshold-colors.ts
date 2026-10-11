@@ -102,6 +102,8 @@ export const COMMERCIAL_CHLORINE_ZONES: ThresholdZones = { okMax: 0.8, warnMax: 
 export const COMMERCIAL_PVC_ZONES: ThresholdZones = { okMax: 2.0, warnMax: 2.0 };
 export const COMMERCIAL_INPUT_MOISTURE_ZONES: ThresholdZones = { okMax: 25.0, warnMax: 25.0 };
 export const COMMERCIAL_OUTPUT_MOISTURE_ZONES: ThresholdZones = { okMax: 8, warnMax: 10 };
+/** Sorter Q = ejected PVC % / input PVC %. At or above this is the calibrated regime. */
+export const SORTER_Q_THRESHOLD = 4;
 
 export function barFillForZones(value: number, zones?: ThresholdZones): string {
   if (!zones) {

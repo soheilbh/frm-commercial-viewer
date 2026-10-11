@@ -147,6 +147,7 @@ export type CommercialReportPayload = {
   input_moisture: CommercialTimeSeries;
   output_moisture: CommercialTimeSeries;
   chlorine: CommercialTimeSeries;
+  ejected_pvc?: CommercialTimeSeries;
   week_number?: number;
   year?: number;
   /** ISO week anchor for scoped dashboard views, e.g. "2026-W26". */

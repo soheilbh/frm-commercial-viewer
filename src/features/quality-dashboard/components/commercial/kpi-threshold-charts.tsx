@@ -14,6 +14,8 @@ import {
   type DualMetricBarPoint,
   FEEDSTOCK_STACK_KEYS,
   getThisWeekDailyBarData,
+  sorterQByOperationalDay,
+  sorterQByShiftTime,
 } from '@/features/quality-dashboard/lib/weekly-context';
 import {
   barFillForZones,
@@ -24,6 +26,7 @@ import {
   diffToneClass,
   kpiThresholdChartConfig,
   KPI_THRESHOLD_COLORS,
+  SORTER_Q_THRESHOLD,
   STATUS_BADGE_STYLES,
   THEME_SEMANTIC,
   type ThresholdZones,
@@ -43,6 +46,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
+  Line,
   Cell,
   LabelList,
   Pie,
@@ -488,7 +493,8 @@ function chartYTicks(yMax: number) {
 }
 
 const trendChartConfig = {
-  value: { label: 'Value', color: 'var(--primary)' }
+  value: { label: 'Ejected PVC', color: 'var(--primary)' },
+  q: { label: 'Q', color: 'var(--chart-1)' }
 } satisfies ChartConfig;
 
 function exposureDiffTone(
@@ -598,7 +604,7 @@ export function ReadingDistributionSummary({
   const toneClass = ZONE_TEXT_CLASS;
   if (summaryRows?.length) {
     return (
-      <div className='flex w-[15rem] shrink-0 self-start flex-col border-l border-border/40 py-1 pl-3'>
+      <div className='metric-sidebar flex w-[15rem] shrink-0 self-start flex-col border-l border-border/40 py-1 pl-3'>
         <div className='mb-2'>
           <p className='text-xs font-bold uppercase tracking-wide text-muted-foreground'>{title}</p>
         </div>
@@ -613,7 +619,7 @@ export function ReadingDistributionSummary({
               )}
             >
               <p className='truncate text-[10px] leading-none text-muted-foreground'>{row.label}</p>
-              <p className={cn('mt-1 whitespace-nowrap font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight', row.toneClass ?? 'text-foreground')}>
+              <p className={cn('metric-sidebar-value mt-1 whitespace-nowrap font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight', row.toneClass ?? 'text-foreground')}>
                 {row.value}
               </p>
               <p className={cn('mt-1 min-h-5 whitespace-nowrap text-right font-mono text-[10px] font-semibold tabular-nums', row.deltaToneClass ?? 'text-muted-foreground')}>
@@ -830,7 +836,8 @@ export function KpiTrendChart({
   decimals = 2,
   height = 76,
   fillHeight = false,
-  window: barWindow = 'trend'
+  window: barWindow = 'trend',
+  showSorterQ = false
 }: {
   report: CommercialReportPayload;
   metricId: string;
@@ -840,12 +847,30 @@ export function KpiTrendChart({
   height?: number;
   fillHeight?: boolean;
   window?: 'trend' | 'week' | 'daily-trend';
+  /** Draw sorter Q and its 4× line on a hidden scale. Ejected % stays on the left axis. */
+  showSorterQ?: boolean;
 }) {
-  const data = barWindow === 'daily-trend'
+  const baseData = barWindow === 'daily-trend'
     ? getDailyTrendBarData(report, metricId)
     : barWindow === 'week'
     ? getThisWeekDailyBarData(report, metricId)
     : getTrendBarData(report, metricId);
+  const qLookup = showSorterQ
+    ? barWindow === 'week'
+      ? sorterQByShiftTime(report)
+      : barWindow === 'daily-trend'
+        ? sorterQByOperationalDay(report)
+        : null
+    : null;
+  const data = qLookup
+    ? baseData.map((point) => {
+        const key = barWindow === 'week' ? point.time : point.dayKey;
+        return {
+          ...point,
+          q: key != null ? qLookup.get(key) ?? null : null
+        };
+      })
+    : baseData;
   const emptyClass = fillHeight
     ? 'flex h-full min-h-[72px] items-center justify-center rounded-sm border border-dashed border-border/50 text-[10px] text-muted-foreground'
     : 'flex items-center justify-center rounded-sm border border-dashed border-border/50 text-[10px] text-muted-foreground';
@@ -861,6 +886,10 @@ export function KpiTrendChart({
   const values = data.map((d) => d.value);
   const refMax = refLines.length ? Math.max(...refLines.map((l) => l.value)) : 0;
   const yMax = chartYMax(values, refMax);
+  const qValues = qLookup
+    ? data.map((d) => ('q' in d ? Number(d.q) : NaN)).filter((v) => Number.isFinite(v))
+    : [];
+  const qMax = qLookup ? chartYMax(qValues, SORTER_Q_THRESHOLD) : 0;
   const useThresholdColors = Boolean(thresholdZones);
   const chartConfig = useThresholdColors ? kpiThresholdChartConfig : trendChartConfig;
   const density = getBarDensity(data.length, barWindow);
@@ -886,7 +915,7 @@ export function KpiTrendChart({
         )}
         style={fillHeight ? undefined : { height }}
       >
-      <BarChart
+      <ComposedChart
         accessibilityLayer
         data={data}
         margin={useBottomLabels ? CHART_AXIS_MARGIN_OVERLAP : CHART_AXIS_MARGIN}
@@ -905,6 +934,7 @@ export function KpiTrendChart({
           </>
         )}
         <YAxis
+          {...(qLookup ? { yAxisId: 'eject' as const } : {})}
           width={CHART_Y_AXIS_WIDTH}
           domain={[0, yMax]}
           ticks={chartYTicks(yMax)}
@@ -914,6 +944,9 @@ export function KpiTrendChart({
           tick={{ fontSize: 11 }}
           tickFormatter={(v: number) => Number(v).toFixed(decimals > 2 ? 2 : decimals)}
         />
+        {qLookup ? (
+          <YAxis yAxisId='q' width={0} domain={[0, qMax]} hide />
+        ) : null}
         <ChartTooltip
           cursor={useThresholdColors ? false : { fill: 'var(--primary)', opacity: 0.1 }}
           content={
@@ -924,6 +957,17 @@ export function KpiTrendChart({
               }}
                 formatter={(value, name, item) => {
                   const payload = item?.payload as Record<string, unknown> | undefined;
+                  if (name === 'q') {
+                    if (value == null || !Number.isFinite(Number(value))) return null;
+                    return (
+                      <div className='flex flex-1 justify-between gap-4 w-full'>
+                        <span className='text-muted-foreground'>Q</span>
+                        <span className='font-mono font-medium text-foreground'>
+                          {Number(value).toFixed(2)}×
+                        </span>
+                      </div>
+                    );
+                  }
                   if (barWindow === 'week') {
                     return formatShiftTooltipValue(Number(value), payload, 'single', (v) => {
                       const unit = metricId === 'feed_volume' ? ' t' : '%';
@@ -931,9 +975,10 @@ export function KpiTrendChart({
                     });
                   }
                   const unit = metricId === 'feed_volume' ? ' t' : '%';
+                  const seriesLabel = qLookup ? 'Ejected' : 'Value';
                   return (
                     <div className='flex flex-1 justify-between gap-4 w-full'>
-                      <span className='text-muted-foreground'>Value</span>
+                      <span className='text-muted-foreground'>{seriesLabel}</span>
                       <span className='font-mono font-medium text-foreground'>
                         {Number(value).toFixed(decimals)}{unit}
                       </span>
@@ -943,10 +988,21 @@ export function KpiTrendChart({
             />
           }
         />
+        {qLookup ? (
+          <ReferenceLine
+            {...(useBottomLabels ? { xAxisId: 'overlap-base' as const } : {})}
+            yAxisId='q'
+            y={SORTER_Q_THRESHOLD}
+            stroke='var(--chart-1)'
+            strokeDasharray='4 3'
+            strokeWidth={1.25}
+          />
+        ) : null}
         {refLines.map((line, i) => (
           <ReferenceLine
             key={i}
             {...(useBottomLabels ? { xAxisId: 'overlap-base' as const } : {})}
+            {...(qLookup ? { yAxisId: 'eject' as const } : {})}
             y={line.value}
             stroke={line.stroke}
             strokeDasharray={line.dash ?? '5 4'}
@@ -956,6 +1012,7 @@ export function KpiTrendChart({
         {useThresholdColors ? (
           <Bar
             {...(useBottomLabels ? { xAxisId: 'overlap-base' as const } : {})}
+            {...(qLookup ? { yAxisId: 'eject' as const } : {})}
             dataKey='value'
             barSize={density.maxBarSize}
             radius={density.radius}
@@ -973,6 +1030,7 @@ export function KpiTrendChart({
         ) : (
           <Bar
             {...(useBottomLabels ? { xAxisId: 'overlap-base' as const } : {})}
+            {...(qLookup ? { yAxisId: 'eject' as const } : {})}
             dataKey='value'
             barSize={density.maxBarSize}
             radius={density.radius}
@@ -982,13 +1040,26 @@ export function KpiTrendChart({
             {data.map((d) => (
               <Cell
                 key={d.idx}
-                fill='var(--color-value)'
+                fill={'q' in d && typeof d.q === 'number' && d.q < SORTER_Q_THRESHOLD ? KPI_THRESHOLD_COLORS.above : 'var(--color-value)'}
                 fillOpacity={trendOpacity(d, barWindow)}
               />
             ))}
           </Bar>
         )}
-      </BarChart>
+        {qLookup ? (
+          <Line
+            {...(useBottomLabels ? { xAxisId: 'overlap-base' as const } : {})}
+            yAxisId='q'
+            dataKey='q'
+            type='monotone'
+            stroke='var(--color-q)'
+            strokeWidth={1.75}
+            dot={false}
+            connectNulls
+            isAnimationActive={false}
+          />
+        ) : null}
+      </ComposedChart>
     </ChartContainer>
       <SelectedWeekOverlay
         metrics={selectedOverlay}

@@ -40,6 +40,7 @@ import {
   COMMERCIAL_OUTPUT_MOISTURE_ZONES,
   COMMERCIAL_PVC_ZONES,
   KPI_THRESHOLD_COLORS,
+  SORTER_Q_THRESHOLD,
   THEME_SEMANTIC,
   ZONE_TEXT_CLASS,
   diffToneClass,
@@ -51,6 +52,7 @@ import {
   formatWeekBoundaryLabel,
   getChartBucketStartHour,
   getDailyBucketStartHour,
+  getThisWeekSorterQValues,
   THIS_WEEK_SHIFTS
 } from '@/features/quality-dashboard/lib/weekly-context';
 import { cn } from '@/lib/utils';
@@ -93,6 +95,7 @@ export type CommercialKpiVisibility = {
   inputVolume: boolean;
   chlorine: boolean;
   pvc: boolean;
+  ejectedPvc: boolean;
   inputMoisture: boolean;
   outputMoisture: boolean;
   composition: boolean;
@@ -102,6 +105,7 @@ export const DEFAULT_COMMERCIAL_KPI_VISIBILITY: CommercialKpiVisibility = {
   inputVolume: true,
   chlorine: true,
   pvc: true,
+  ejectedPvc: true,
   inputMoisture: true,
   outputMoisture: true,
   composition: true
@@ -167,6 +171,21 @@ function MetricChartMetricsRow({ children }: { children?: ReactNode }) {
   return (
     <div className='mb-1 flex h-5 shrink-0 items-center justify-end gap-2'>
       {children}
+    </div>
+  );
+}
+
+function SorterQChartLegend() {
+  return (
+    <div className='flex items-center gap-2 font-mono text-[10px] font-semibold tabular-nums text-muted-foreground'>
+      <span className='inline-flex items-center gap-1'>
+        <span className='h-0.5 w-3 bg-chart-1' />
+        Q
+      </span>
+      <span className='inline-flex items-center gap-1'>
+        <span className='h-px w-3 border-t border-dashed border-chart-1' />
+        {SORTER_Q_THRESHOLD}×
+      </span>
     </div>
   );
 }
@@ -541,6 +560,13 @@ function compositionDeltaTone(label: string, delta: number): string {
   return diffToneClass(delta);
 }
 
+function medianOf(values: number[]): number | null {
+  const finite = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!finite.length) return null;
+  const mid = Math.floor(finite.length / 2);
+  return finite.length % 2 === 1 ? finite[mid] : (finite[mid - 1] + finite[mid]) / 2;
+}
+
 function numberRange(values: number[], decimals: number, suffix: string): string | null {
   const finite = values.filter((v) => Number.isFinite(v));
   if (!finite.length) return null;
@@ -743,6 +769,143 @@ function QualityDistributionCard({
           title='This week stats'
           summaryRows={summaryRows}
         />
+      </div>
+    </MetricRow>
+  );
+}
+
+/** F308 reject-stream PVC — trend charts only; thresholds deferred. */
+function EjectedPvcCard({
+  report,
+  visible = true
+}: {
+  report: CommercialReportPayload;
+  visible?: boolean;
+}) {
+  const ctx = buildMetricContext(report, 'ejected_pvc');
+  const weekRange = numberRange(getThisWeekDailyValues(report, 'ejected_pvc'), 2, '%');
+  const qShifts = visible ? getThisWeekSorterQValues(report) : [];
+  const qThisWeek = medianOf(qShifts);
+  const qBelowPct = qShifts.length
+    ? Math.round((qShifts.filter((value) => value < SORTER_Q_THRESHOLD).length / qShifts.length) * 100)
+    : null;
+  const diff =
+    ctx.currentWeek != null && ctx.avg12Week != null ? ctx.currentWeek - ctx.avg12Week : null;
+  const sidebarRows: VolumeSidebarRow[] = [
+    {
+      label: 'This week',
+      display: 'pct',
+      decimals: 2,
+      value: ctx.currentWeek ?? 0,
+      valueText: ctx.currentWeek != null ? `${ctx.currentWeek.toFixed(2)}%` : '—'
+    },
+    {
+      label: '12W average',
+      display: 'pct',
+      decimals: 2,
+      value: ctx.avg12Week ?? 0,
+      valueText: ctx.avg12Week != null ? `${ctx.avg12Week.toFixed(2)}%` : '—',
+      diffText: 'baseline',
+      diffPreference: 'neutral'
+    },
+    {
+      label: 'Difference',
+      display: 'pp',
+      decimals: 2,
+      value: diff ?? 0,
+      valueText: diff != null ? `${diff > 0 ? '+' : ''}${diff.toFixed(2)} pp` : '—',
+      valueTone: qualityDeltaTone(diff, false),
+      diffText: 'vs 12W avg',
+      diffPreference: 'higher-better'
+    },
+    {
+      label: 'Q · 8h',
+      display: 'pp',
+      value: qThisWeek ?? 0,
+      valueText: qThisWeek != null ? `${qThisWeek.toFixed(2)}×` : '—',
+      valueTone:
+        qThisWeek == null
+          ? undefined
+          : qThisWeek >= SORTER_Q_THRESHOLD
+            ? THEME_SEMANTIC.positive.text
+            : THEME_SEMANTIC.negative.text,
+      diffPp: qThisWeek != null ? qThisWeek - SORTER_Q_THRESHOLD : null,
+      diffText: qThisWeek != null ? `vs ${SORTER_Q_THRESHOLD}×` : 'no paired shifts',
+      diffPreference: 'higher-better'
+    }
+  ];
+
+  return (
+    <MetricRow title='Ejected PVC' sub='Reject stream'>
+      <div className={METRIC_BODY_ROW}>
+        <div className={METRIC_CHART_MAIN}>
+          <div className={METRIC_CHART_GRID}>
+            <div className={METRIC_TREND_COL}>
+              <MetricChartMetricsRow>
+                <SorterQChartLegend />
+              </MetricChartMetricsRow>
+              <div className={METRIC_CHART_SLOT}>
+                {visible ? (
+                  <KpiTrendChart
+                    report={report}
+                    metricId='ejected_pvc'
+                    decimals={2}
+                    fillHeight
+                    window='daily-trend'
+                    showSorterQ
+                  />
+                ) : (
+                  <DisabledChartPlaceholder />
+                )}
+              </div>
+            </div>
+            <div className={METRIC_WEEK_COL}>
+              <MetricChartMetricsRow>
+                <SorterQChartLegend />
+              </MetricChartMetricsRow>
+              <div className={METRIC_CHART_SLOT}>
+                {visible ? (
+                  <KpiTrendChart
+                    report={report}
+                    metricId='ejected_pvc'
+                    decimals={2}
+                    fillHeight
+                    window='week'
+                    showSorterQ
+                  />
+                ) : (
+                  <DisabledChartPlaceholder />
+                )}
+              </div>
+            </div>
+          </div>
+          <div className={cn(METRIC_FOOTER_ROW, 'items-center gap-3')}>
+            <p className='min-w-0 truncate text-[10px] leading-none text-muted-foreground'>
+              Q this week (8h){' '}
+              <span
+                className={cn(
+                  'font-mono font-semibold tabular-nums',
+                  !visible || qThisWeek == null
+                    ? 'text-foreground'
+                    : qThisWeek >= SORTER_Q_THRESHOLD
+                      ? 'text-commercial-good'
+                      : 'text-commercial-bad'
+                )}
+              >
+                {visible && qThisWeek != null ? `${qThisWeek.toFixed(2)}×` : HIDDEN_VALUE}
+              </span>
+              {visible && qBelowPct != null ? (
+                <span>
+                  {' '}· {qBelowPct}% of shifts below {SORTER_Q_THRESHOLD}×
+                </span>
+              ) : null}
+            </p>
+            <div className='ml-auto'>
+              <FooterRangeText label='This week range' value={visible ? weekRange : HIDDEN_VALUE} />
+            </div>
+          </div>
+        </div>
+        <VolumeSidebar title='This week stats' rows={sidebarRows} visible={visible} />
       </div>
     </MetricRow>
   );
@@ -968,7 +1131,7 @@ function VolumeSidebar({
   visible?: boolean;
 }) {
   return (
-    <div className={cn('flex flex-col border-l border-border/40 py-1 pl-3', className ?? 'w-[15rem] shrink-0')}>
+    <div className={cn('metric-sidebar flex flex-col border-l border-border/40 py-1 pl-3', className ?? 'w-[15rem] shrink-0')}>
       <div className='mb-2'>
         <p className='text-xs font-bold uppercase tracking-wide text-muted-foreground'>{title}</p>
       </div>
@@ -1001,7 +1164,7 @@ function VolumeSidebar({
               )}
             >
               <p className='truncate text-[10px] leading-none text-muted-foreground'>{row.label}</p>
-              <p className={cn('mt-1 whitespace-nowrap font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight', row.valueTone ?? 'text-foreground')}>
+              <p className={cn('metric-sidebar-value mt-1 whitespace-nowrap font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight', row.valueTone ?? 'text-foreground')}>
                 {rowVisible
                   ? (row.valueText ??
                     (row.display === 'tonnes'
@@ -1143,7 +1306,7 @@ function FeedstockShiftSummary({
   visible?: boolean;
 }) {
   return (
-    <div className='flex w-[15rem] shrink-0 self-start flex-col border-l border-border/40 py-1 pl-3'>
+    <div className='metric-sidebar flex w-[15rem] shrink-0 self-start flex-col border-l border-border/40 py-1 pl-3'>
       <div className='mb-2'>
         <p className='text-xs font-bold uppercase tracking-wide text-muted-foreground'>Mix shift</p>
       </div>
@@ -1163,10 +1326,7 @@ function FeedstockShiftSummary({
               )}
             >
               <p className='truncate text-[10px] leading-none text-muted-foreground'>{c.label}</p>
-              <p
-                className='mt-1 font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight'
-                style={{ color: c.color }}
-              >
+              <p className='metric-sidebar-value mt-1 font-mono text-[17px] font-bold tabular-nums leading-none tracking-tight' style={{ color: c.color }}>
                 {visible ? `${share}%` : HIDDEN_VALUE}
               </p>
               <div className='mt-1 flex min-h-5 items-start justify-between gap-1 text-[10px]'>
@@ -1561,7 +1721,7 @@ const TRAFFIC_ZONE_CLASS = {
 function SnapshotKpiCard({ item }: { item: SnapshotKpi }) {
   const visible = item.visible !== false;
   return (
-    <Card className='gap-0 overflow-hidden py-0'>
+    <Card className='min-w-0 gap-0 overflow-hidden py-0'>
       <CardHeader className='gap-0.5 px-3 pb-2 pt-3'>
         <CardTitle className='text-[11px] font-bold uppercase tracking-wide text-muted-foreground'>
           {item.label}
@@ -1602,17 +1762,23 @@ function CommercialSnapshot({
   clDist,
   pvcDist,
   moInDist,
+  qDist,
   visibility
 }: {
   report: CommercialReportPayload;
   clDist: ReturnType<typeof buildThresholdDistribution>;
   pvcDist: ReturnType<typeof buildThresholdDistribution>;
   moInDist: ReturnType<typeof buildThresholdDistribution>;
+  qDist: ReturnType<typeof buildThresholdDistribution>;
   visibility: CommercialKpiVisibility;
 }) {
   const cl = buildMetricContext(report, 'chlorine');
   const pvc = buildMetricContext(report, 'pvc');
+  const ejected = buildMetricContext(report, 'ejected_pvc');
   const moIn = buildMetricContext(report, 'input_moisture');
+  const qWeek = pvc.currentWeek != null && pvc.currentWeek > 0 && ejected.currentWeek != null
+    ? ejected.currentWeek / pvc.currentWeek
+    : null;
   const inputCurrent = volumeWeekTonnage(report, 'feed_volume');
   const inputAvg = volumeAvg12w(report, 'feed_volume');
   const inputDelta = inputCurrent != null && inputAvg != null ? inputCurrent - inputAvg : null;
@@ -1662,6 +1828,29 @@ function CommercialSnapshot({
       visible: visibility.chlorine
     },
     {
+      label: 'Ejected PVC',
+      source: 'Reject stream',
+      value: ejected.currentWeek != null ? `${ejected.currentWeek.toFixed(2)}%` : '—',
+      delta: signedValue(
+        ejected.currentWeek != null && ejected.avg12Week != null ? ejected.currentWeek - ejected.avg12Week : null,
+        2,
+        ' pp'
+      ),
+      deltaValue: ejected.currentWeek != null && ejected.avg12Week != null ? ejected.currentWeek - ejected.avg12Week : null,
+      deltaGood: favourableDelta(
+        ejected.currentWeek != null && ejected.avg12Week != null ? ejected.currentWeek - ejected.avg12Week : null,
+        false
+      ),
+      avgLabel: ejected.avg12Week != null ? `${ejected.avg12Week.toFixed(2)}%` : '—',
+      context: qWeek == null
+        ? 'Sorter Q needs feed and eject'
+        : qDist.abovePct > 0
+          ? `Q ${qWeek.toFixed(1)}× · ${qDist.abovePct}% of samples below ${SORTER_Q_THRESHOLD}×`
+          : `Q ${qWeek.toFixed(1)}× · within ${SORTER_Q_THRESHOLD}×`,
+      contextTone: qWeek != null && qWeek >= SORTER_Q_THRESHOLD ? ZONE_TEXT_CLASS.within : ZONE_TEXT_CLASS.above,
+      visible: visibility.ejectedPvc
+    },
+    {
       label: 'Input moisture',
       source: 'Pre-dryer feed moisture',
       value: moIn.currentWeek != null ? `${moIn.currentWeek.toFixed(1)}%` : '—',
@@ -1683,7 +1872,7 @@ function CommercialSnapshot({
         </h3>
         <p className='text-[10px] text-muted-foreground'>This week vs prior 12 complete weeks</p>
       </div>
-      <div className='commercial-snapshot-grid grid grid-cols-2 gap-2'>
+      <div className='commercial-snapshot-grid grid w-full grid-cols-5 gap-2'>
         {items.map((item) => <SnapshotKpiCard key={item.label} item={item} />)}
       </div>
     </section>
@@ -1696,7 +1885,8 @@ function SpecificationCoverageRow({
   current,
   dist,
   hasNear = true,
-  visible = true
+  visible = true,
+  breachWord = 'above'
 }: {
   label: string;
   basis: string;
@@ -1704,9 +1894,11 @@ function SpecificationCoverageRow({
   dist: ReturnType<typeof buildThresholdDistribution>;
   hasNear?: boolean;
   visible?: boolean;
+  /** Word for the red share. Q is higher-better, so a miss is "below". */
+  breachWord?: 'above' | 'below';
 }) {
   const focus = dist.abovePct > 0
-    ? { text: `${dist.abovePct}% above`, tone: TRAFFIC_ZONE_CLASS.above.text }
+    ? { text: `${dist.abovePct}% ${breachWord}`, tone: TRAFFIC_ZONE_CLASS.above.text }
     : dist.nearPct > 0 && hasNear
       ? { text: `${dist.nearPct}% near`, tone: TRAFFIC_ZONE_CLASS.near.text }
       : { text: `${dist.withinPct}% within`, tone: TRAFFIC_ZONE_CLASS.within.text };
@@ -1740,25 +1932,36 @@ function SpecificationCoverage({
   clDist,
   pvcDist,
   moInDist,
+  qDist,
   visibility
 }: {
   report: CommercialReportPayload;
   clDist: ReturnType<typeof buildThresholdDistribution>;
   pvcDist: ReturnType<typeof buildThresholdDistribution>;
   moInDist: ReturnType<typeof buildThresholdDistribution>;
+  qDist: ReturnType<typeof buildThresholdDistribution>;
   visibility: CommercialKpiVisibility;
 }) {
   const cl = buildMetricContext(report, 'chlorine');
   const pvc = buildMetricContext(report, 'pvc');
+  const ejected = buildMetricContext(report, 'ejected_pvc');
   const moIn = buildMetricContext(report, 'input_moisture');
+  const qWeek = pvc.currentWeek != null && pvc.currentWeek > 0 && ejected.currentWeek != null
+    ? ejected.currentWeek / pvc.currentWeek
+    : null;
 
   return (
-    <Card className='gap-0 py-0'>
-      <CardHeader className='gap-0.5 px-3 pb-2 pt-3'>
+    <Card className='flex h-full flex-col gap-0 py-0'>
+      <CardHeader className='grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 px-3 pb-1.5 pt-2.5'>
         <CardTitle className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>Specification coverage</CardTitle>
-        <CardDescription className='text-[9px]'>Threshold exposure by validated sample</CardDescription>
+        <div className='flex items-center justify-end gap-2.5 text-[9px] text-muted-foreground'>
+          <span className='inline-flex items-center gap-1'><span className={cn('size-1.5 rounded-full', TRAFFIC_ZONE_CLASS.within.dot)} />Within</span>
+          <span className='inline-flex items-center gap-1'><span className={cn('size-1.5 rounded-full', TRAFFIC_ZONE_CLASS.near.dot)} />Near</span>
+          <span className='inline-flex items-center gap-1'><span className={cn('size-1.5 rounded-full', TRAFFIC_ZONE_CLASS.above.dot)} />Above</span>
+        </div>
+        <CardDescription className='col-span-2 text-[9px]'>Threshold exposure by validated sample</CardDescription>
       </CardHeader>
-      <CardContent className='flex flex-col gap-2.5 px-3 pb-3'>
+      <CardContent className='flex flex-col gap-1.5 px-3 pb-2.5'>
         <SpecificationCoverageRow
           label='Input PVC'
           basis='Threshold 2%'
@@ -1782,11 +1985,15 @@ function SpecificationCoverage({
           hasNear={false}
           visible={visibility.inputMoisture}
         />
-        <div className='flex items-center gap-3 border-t border-border/40 pt-2 text-[9px] text-muted-foreground'>
-          <span className='inline-flex items-center gap-1'><span className={cn('size-1.5 rounded-full', TRAFFIC_ZONE_CLASS.within.dot)} />Within</span>
-          <span className='inline-flex items-center gap-1'><span className={cn('size-1.5 rounded-full', TRAFFIC_ZONE_CLASS.near.dot)} />Near</span>
-          <span className='inline-flex items-center gap-1'><span className={cn('size-1.5 rounded-full', TRAFFIC_ZONE_CLASS.above.dot)} />Above</span>
-        </div>
+        <SpecificationCoverageRow
+          label='Sorter Q'
+          basis={`Threshold ${SORTER_Q_THRESHOLD}×`}
+          current={qWeek != null ? `avg ${qWeek.toFixed(2)}×` : 'no average'}
+          dist={qDist}
+          hasNear={false}
+          breachWord='below'
+          visible={visibility.ejectedPvc && visibility.pvc}
+        />
       </CardContent>
     </Card>
   );
@@ -1801,6 +2008,14 @@ function commercialMovementItems(report: CommercialReportPayload, visibility: Co
       lowerIsBetter: false,
       decimals: 0,
       unit: ' t'
+    },
+    {
+      id: 'ejected_pvc',
+      label: 'Ejected PVC',
+      visible: visibility.ejectedPvc,
+      lowerIsBetter: false,
+      decimals: 2,
+      unit: ' pp'
     },
     {
       id: 'pvc',
@@ -1865,24 +2080,28 @@ function KeyMovements({ report, visibility }: { report: CommercialReportPayload;
   const extent = Math.max(1, ...visibleItems.map((item) => Math.abs(item.value)));
 
   return (
-    <Card className='gap-0 py-0'>
-      <CardHeader className='gap-0.5 px-3 pb-2 pt-3'>
+    <Card className='flex h-full flex-col gap-0 py-0'>
+      <CardHeader className='grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 px-3 pb-1.5 pt-2.5'>
         <CardTitle className='text-xs font-bold uppercase tracking-wider text-muted-foreground'>Key movements</CardTitle>
-        <CardDescription className='text-[9px]'>Commercial KPI change: this week vs prior 12W average</CardDescription>
+        <div className='flex items-center justify-end gap-2.5 text-[9px] text-muted-foreground'>
+          <span className='inline-flex items-center gap-1'><span className='size-1.5 rounded-full bg-commercial-good' />Better</span>
+          <span className='inline-flex items-center gap-1'><span className='size-1.5 rounded-full bg-commercial-bad' />Worse</span>
+        </div>
+        <CardDescription className='col-span-2 text-[9px]'>Commercial KPI change: this week vs prior 12W average</CardDescription>
       </CardHeader>
-      <CardContent className='px-3 pb-3'>
+      <CardContent className='flex min-h-0 flex-1 flex-col px-3 pb-2.5'>
         <div className='mb-1 grid grid-cols-[7.25rem_minmax(0,1fr)_8.25rem] items-center gap-2 text-[8px] uppercase tracking-wide text-muted-foreground'>
           <span>Metric</span>
           <span>Movement</span>
           <span className='text-right'>Δ vs 12W</span>
         </div>
-        <div className='flex flex-col gap-2'>
+        <div className='flex min-h-0 flex-1 flex-col justify-between'>
         {items.map((item) => {
           const width = item.visible ? Math.max(2, (Math.abs(item.value) / extent) * 100) : 0;
           return (
-            <div key={item.label} className='grid h-5 grid-cols-[7.25rem_minmax(0,1fr)_8.25rem] items-center gap-2'>
+            <div key={item.label} className='grid min-h-4 grid-cols-[7.25rem_minmax(0,1fr)_8.25rem] items-center gap-2'>
               <p className='truncate text-[10px] font-semibold text-foreground'>{item.label}</p>
-              <div className='h-2 overflow-hidden rounded-full bg-muted/70'>
+              <div className='h-1.5 overflow-hidden rounded-full bg-muted/70'>
                 {item.visible ? (
                   <span
                     className={cn('block h-full rounded-full', item.barClass)}
@@ -1900,10 +2119,6 @@ function KeyMovements({ report, visibility }: { report: CommercialReportPayload;
           );
         })}
         </div>
-        <div className='mt-2 flex items-center gap-3 border-t border-border/40 pt-1.5 text-[9px] text-muted-foreground'>
-          <span className='inline-flex items-center gap-1'><span className='size-1.5 rounded-full bg-commercial-good' />Better</span>
-          <span className='inline-flex items-center gap-1'><span className='size-1.5 rounded-full bg-commercial-bad' />Worse</span>
-        </div>
       </CardContent>
     </Card>
   );
@@ -1914,19 +2129,21 @@ function CommercialDecisionLayer({
   clDist,
   pvcDist,
   moInDist,
+  qDist,
   visibility
 }: {
   report: CommercialReportPayload;
   clDist: ReturnType<typeof buildThresholdDistribution>;
   pvcDist: ReturnType<typeof buildThresholdDistribution>;
   moInDist: ReturnType<typeof buildThresholdDistribution>;
+  qDist: ReturnType<typeof buildThresholdDistribution>;
   visibility: CommercialKpiVisibility;
 }) {
   return (
     <div className='flex flex-col gap-2'>
-      <CommercialSnapshot report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} visibility={visibility} />
+      <CommercialSnapshot report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} qDist={qDist} visibility={visibility} />
       <div className='commercial-decision-split grid grid-cols-1 items-stretch gap-2'>
-        <SpecificationCoverage report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} visibility={visibility} />
+        <SpecificationCoverage report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} qDist={qDist} visibility={visibility} />
         <KeyMovements report={report} visibility={visibility} />
       </div>
     </div>
@@ -2015,6 +2232,18 @@ export function CommercialReportGrid({
     0,
     'output moisture'
   );
+  const qSamples = getThisWeekSorterQValues(report);
+  const qBelow = qSamples.filter((value) => value < SORTER_Q_THRESHOLD).length;
+  const qDist = buildThresholdDistribution([], SORTER_Q_THRESHOLD, SORTER_Q_THRESHOLD, 0, 'sorter Q');
+  if (qSamples.length) {
+    qDist.withinCount = qSamples.length - qBelow;
+    qDist.aboveCount = qBelow;
+    qDist.nearCount = 0;
+    qDist.totalReadings = qSamples.length;
+    qDist.withinPct = Math.round((qDist.withinCount / qSamples.length) * 100);
+    qDist.abovePct = Math.round((qBelow / qSamples.length) * 100);
+    qDist.nearPct = 0;
+  }
 
   return (
     <div className='commercial-report-body flex w-full flex-col gap-2 bg-transparent p-1'>
@@ -2023,6 +2252,7 @@ export function CommercialReportGrid({
         clDist={clDist}
         pvcDist={pvcDist}
         moInDist={moInDist}
+        qDist={qDist}
         visibility={visibility}
       />
 
@@ -2069,6 +2299,8 @@ export function CommercialReportGrid({
           trendWindow='daily-trend'
           visible={visibility.chlorine}
         />
+
+        <EjectedPvcCard report={report} visible={visibility.ejectedPvc} />
 
         <MoistureDistributionCard
           report={report}

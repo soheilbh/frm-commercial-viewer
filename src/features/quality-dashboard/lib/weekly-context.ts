@@ -353,7 +353,9 @@ export function computeWeeklyRank(
 
 function metricWords(metricId: string): { high: string; low: string } {
   if (metricId.includes('moisture')) return { high: 'wettest', low: 'driest' };
-  if (metricId === 'pvc') return { high: 'highest PVC', low: 'lowest PVC' };
+  if (metricId === 'pvc' || metricId === 'ejected_pvc') {
+    return { high: 'highest PVC', low: 'lowest PVC' };
+  }
   if (metricId === 'feed_volume') return { high: 'highest feed', low: 'lowest feed' };
   return { high: 'highest', low: 'lowest' };
 }
@@ -526,6 +528,17 @@ export function buildMetricContext(
         .map((w) => w.avg);
     }
     statusFn = pvcStatus;
+  } else if (metricId === 'ejected_pvc') {
+    // Reject-stream purity: higher PVC share is favourable (no threshold bands yet).
+    lowerIsBetter = false;
+    const series = report.weekly_series?.find((s) => s.id === 'ejected_pvc');
+    values = seriesValuesUpToAnchor(series, anchor);
+    if (values.length < 2) {
+      values = weeklyAvgsFromDaily(report.ejected_pvc?.points ?? [])
+        .filter((w) => weekKeyLte(w.key, anchor))
+        .map((w) => w.avg);
+    }
+    statusFn = () => 'OK';
   } else if (metricId === 'input_moisture') {
     values = weeklyPointsUpToAnchor(report, 'input_moisture').map((p) => p.value);
     statusFn = inputMoistureStatus;
@@ -744,6 +757,10 @@ export type DailyBarPoint = {
   timeLabel?: string;
   isSelectedWeek?: boolean;
   hasData?: boolean;
+  /** Shift timestamp, used to align sorter Q on the this-week chart. */
+  time?: string;
+  /** Operational day key, used to align a second series such as sorter Q. */
+  dayKey?: string;
 };
 
 /** 12-week trend charts — one bar per calendar week. */
@@ -1186,6 +1203,7 @@ function metricUsesShiftAveraging(metricId: string): boolean {
   return (
     metricId === 'chlorine' ||
     metricId === 'pvc' ||
+    metricId === 'ejected_pvc' ||
     metricId === 'input_moisture' ||
     metricId === 'output_moisture'
   );
@@ -1356,6 +1374,7 @@ function getRawDailyPoints(
       value: p.values['PVC'] ?? null
     }));
   }
+  if (metricId === 'ejected_pvc') return report.ejected_pvc?.points ?? [];
   if (metricId === 'input_moisture') return report.input_moisture.points;
   if (metricId === 'output_moisture') return report.output_moisture.points;
   return [];
@@ -1447,10 +1466,61 @@ export function getDailyTrendBarData(
       value: p.value,
       weekLabel: label,
       timeLabel: dayLabelFromOperationalTime(p.time, dailyStartHour),
+      dayKey: operationalDayKey(p.time, dailyStartHour),
       isLast: idx === sliced.length - 1,
       isSelectedWeek: isInPlantWeek(p.time, anchor, startHour)
     };
   });
+}
+
+/** Daily sorter Q (ejected PVC % / input PVC %) keyed by operational day. */
+export function sorterQByOperationalDay(report: CommercialReportPayload): Map<string, number> {
+  const dailyStartHour = getDailyBucketStartHour(report);
+  const startHourForFilter = getChartBucketStartHour(report);
+  const anchor = getAnchorWeekKey(report);
+  const dailyMeans = (metricId: string) => {
+    const points = getRawDailyPoints(report, metricId).filter(
+      (p): p is { time: string; value: number } => p.value != null && p.value > 0
+    );
+    return averagePointsByDay(
+      points.filter((p) => weekKeyLte(plantReportingWeekKey(p.time, startHourForFilter), anchor)),
+      dailyStartHour
+    );
+  };
+  const input = new Map(
+    dailyMeans('pvc').map((p) => [operationalDayKey(p.time, dailyStartHour), p.value])
+  );
+  const out = new Map<string, number>();
+  for (const point of dailyMeans('ejected_pvc')) {
+    const key = operationalDayKey(point.time, dailyStartHour);
+    const feed = input.get(key);
+    if (feed != null && feed > 0) out.set(key, point.value / feed);
+  }
+  return out;
+}
+
+/** This-week sorter Q on shifts where both feed and eject shares exist. */
+function pairedSorterQShifts(report: CommercialReportPayload): { time: string; value: number }[] {
+  const feed = new Map(
+    shiftPointsInAnchorWeek(report, 'pvc')
+      .filter((p) => p.hasData && p.value > 0)
+      .map((p) => [p.time, p.value])
+  );
+  const values: { time: string; value: number }[] = [];
+  for (const point of shiftPointsInAnchorWeek(report, 'ejected_pvc')) {
+    const input = feed.get(point.time);
+    if (!point.hasData || input == null || input <= 0) continue;
+    values.push({ time: point.time, value: point.value / input });
+  }
+  return values;
+}
+
+export function sorterQByShiftTime(report: CommercialReportPayload): Map<string, number> {
+  return new Map(pairedSorterQShifts(report).map((point) => [point.time, point.value]));
+}
+
+export function getThisWeekSorterQValues(report: CommercialReportPayload): number[] {
+  return pairedSorterQShifts(report).map((point) => point.value);
 }
 
 /** Last daily values for the selected ISO week. */
@@ -1476,6 +1546,7 @@ export function getThisWeekDailyBarData(
     value: p.value,
     weekLabel: weekEdgeDayLabel(idx, arr, startHour),
     timeLabel: formatHoverShift(p.time),
+    time: p.time,
     hasData: p.hasData,
     isLast: idx === arr.length - 1
   }));
