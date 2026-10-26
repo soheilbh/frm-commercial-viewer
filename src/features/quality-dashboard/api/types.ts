@@ -138,8 +138,24 @@ export type CommercialThresholdExposure = {
   total_readings: number;
 };
 
+export type CommercialPvcStream = {
+  id: string;
+  label: string;
+  sorters: string[];
+  unit: string;
+  points: CommercialTimeSeriesPoint[];
+  weekly: CommercialWeeklyPoint[];
+  this_week_avg: number | null;
+  baseline_avg: number | null;
+  difference: number | null;
+  difference_pct: number | null;
+  threshold_exposure?: CommercialThresholdExposure | null;
+};
+
 export type CommercialReportPayload = {
   title: string;
+  /** Commercial plant id: 'frm' (default) or 'tsp'. */
+  plant?: string;
   generated_at: string;
   calculation_config?: Partial<CommercialReportCalculationConfig>;
   comparisons: CommercialMetricComparison[];
@@ -147,7 +163,9 @@ export type CommercialReportPayload = {
   input_moisture: CommercialTimeSeries;
   output_moisture: CommercialTimeSeries;
   chlorine: CommercialTimeSeries;
-  ejected_pvc?: CommercialTimeSeries;
+  ejected_pvc?: CommercialTimeSeries | null;
+  /** Per sorter-stream PVC (TSP lights / mediums). Empty for FRM. */
+  pvc_streams?: CommercialPvcStream[];
   week_number?: number;
   year?: number;
   /** ISO week anchor for scoped dashboard views, e.g. "2026-W26". */
@@ -259,6 +277,11 @@ export type CommercialReportCalculationConfig = {
   pvc_active_material_min_area_m2: number;
   pvc_active_material_min_count: number;
   pvc_min_valid_samples_per_bucket: number;
+  composition_bucket_min_area_m2?: number;
+  sorter_belt_min_current_a?: number;
+  analyzer_belt_min_current_a?: number;
+  plant?: string;
+  plant_timezone?: string;
   input_pvc_threshold_pct: number;
   chlorine_within_threshold_pct: number;
   chlorine_above_threshold_pct: number;

@@ -105,6 +105,53 @@ export const COMMERCIAL_OUTPUT_MOISTURE_ZONES: ThresholdZones = { okMax: 8, warn
 /** Sorter Q = ejected PVC % / input PVC %. At or above this is the calibrated regime. */
 export const SORTER_Q_THRESHOLD = 4;
 
+export type CommercialZones = {
+  chlorine: ThresholdZones;
+  pvc: ThresholdZones;
+  inputMoisture: ThresholdZones;
+  outputMoisture: ThresholdZones;
+};
+
+type ZoneConfigSource = {
+  calculation_config?: {
+    input_pvc_threshold_pct?: number;
+    chlorine_within_threshold_pct?: number;
+    chlorine_above_threshold_pct?: number;
+    input_moisture_threshold_pct?: number;
+    output_moisture_threshold_pct?: number;
+  } | null;
+} | null | undefined;
+
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Threshold zones for one report. Plants carry their own limits in the saved
+ * calculation config (FRM: PVC 2 %, moisture 25 %; TSP: PVC 5 %, moisture 20 %);
+ * the FRM constants remain the fallback for reports without a config.
+ */
+export function getCommercialZones(report: ZoneConfigSource): CommercialZones {
+  const cfg = report?.calculation_config ?? undefined;
+  const pvcMax = finiteOr(cfg?.input_pvc_threshold_pct, COMMERCIAL_PVC_ZONES.warnMax);
+  const clOk = finiteOr(cfg?.chlorine_within_threshold_pct, COMMERCIAL_CHLORINE_ZONES.okMax);
+  const clWarn = finiteOr(cfg?.chlorine_above_threshold_pct, COMMERCIAL_CHLORINE_ZONES.warnMax);
+  const moInMax = finiteOr(cfg?.input_moisture_threshold_pct, COMMERCIAL_INPUT_MOISTURE_ZONES.warnMax);
+  const moOutOk = finiteOr(cfg?.output_moisture_threshold_pct, COMMERCIAL_OUTPUT_MOISTURE_ZONES.okMax);
+  const moOutWarn = Math.max(moOutOk, COMMERCIAL_OUTPUT_MOISTURE_ZONES.warnMax);
+  return {
+    chlorine: { okMax: clOk, warnMax: Math.max(clOk, clWarn) },
+    pvc: { okMax: pvcMax, warnMax: pvcMax },
+    inputMoisture: { okMax: moInMax, warnMax: moInMax },
+    outputMoisture: { okMax: moOutOk, warnMax: moOutWarn }
+  };
+}
+
+/** Compact "2%" / "1.2%" label for legends and basis text. */
+export function formatZoneLimit(value: number): string {
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}%`;
+}
+
 export function barFillForZones(value: number, zones?: ThresholdZones): string {
   if (!zones) {
     return 'var(--primary)';

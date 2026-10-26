@@ -7,7 +7,9 @@ import {
   COMMERCIAL_CHLORINE_ZONES,
   COMMERCIAL_INPUT_MOISTURE_ZONES,
   COMMERCIAL_PVC_ZONES,
-  KPI_THRESHOLD_COLORS
+  KPI_THRESHOLD_COLORS,
+  getCommercialZones,
+  type ThresholdZones
 } from '@/features/quality-dashboard/lib/kpi-threshold-colors';
 
 export type MetricWeeklyContext = {
@@ -74,10 +76,11 @@ const MATERIAL_CATEGORIES: Array<{
   ids: string[];
   color: string;
 }> = [
-  { key: 'plastics', label: 'Plastics', ids: ['polymers', 'pc_ps_abs_eps', 'dark_polymers'], color: 'var(--commercial-mix-plastics)' },
-  { key: 'organic', label: 'Organic', ids: ['organic', 'paper', 'foam'], color: 'var(--commercial-mix-organic)' },
+  // ids include the TSP sorter classes (eps/pet/pe_ld, tetra/gt, paper_wood); unused ids are harmless.
+  { key: 'plastics', label: 'Plastics', ids: ['polymers', 'pc_ps_abs_eps', 'dark_polymers', 'eps', 'pet', 'pe_ld'], color: 'var(--commercial-mix-plastics)' },
+  { key: 'organic', label: 'Organic', ids: ['organic', 'paper', 'foam', 'paper_wood'], color: 'var(--commercial-mix-organic)' },
   { key: 'pvc', label: 'PVC', ids: ['pvc'], color: 'var(--commercial-mix-pvc)' },
-  { key: 'beverage', label: 'Beverage Cartons', ids: ['po_alu'], color: 'var(--commercial-mix-beverage)' },
+  { key: 'beverage', label: 'Beverage Cartons', ids: ['po_alu', 'tetra', 'gt'], color: 'var(--commercial-mix-beverage)' },
   { key: 'others', label: 'Others', ids: ['ceramics', 'metal', 'fkn', 'textile'], color: 'var(--commercial-mix-others)' }
 ];
 
@@ -351,9 +354,21 @@ export function computeWeeklyRank(
   return { rankPosition: rankLow, rankTotal: total, percentile };
 }
 
+/** Per-sorter-stream PVC series published by multi-line plants (e.g. TSP pvc_lights). */
+export function isPvcStreamMetric(metricId: string): boolean {
+  return metricId.startsWith('pvc_') && metricId !== 'pvc';
+}
+
+function pvcStreamPoints(
+  report: CommercialReportPayload,
+  metricId: string
+): { time: string; value: number | null }[] {
+  return report.pvc_streams?.find((s) => s.id === metricId)?.points ?? [];
+}
+
 function metricWords(metricId: string): { high: string; low: string } {
   if (metricId.includes('moisture')) return { high: 'wettest', low: 'driest' };
-  if (metricId === 'pvc' || metricId === 'ejected_pvc') {
+  if (metricId === 'pvc' || metricId === 'ejected_pvc' || isPvcStreamMetric(metricId)) {
     return { high: 'highest PVC', low: 'lowest PVC' };
   }
   if (metricId === 'feed_volume') return { high: 'highest feed', low: 'lowest feed' };
@@ -460,26 +475,24 @@ export function buildWeeklyContextRows(report: CommercialReportPayload): WeeklyC
   });
 }
 
-function chlorineStatus(v: number): 'OK' | 'Watch' | 'Alert' {
-  if (v >= 1.2) return 'Alert';
-  if (v >= 0.8) return 'Watch';
-  return 'OK';
+type MetricStatus = 'OK' | 'Watch' | 'Alert';
+
+/** Plant limits come from the saved report config (FRM / TSP differ). */
+function chlorineStatusFor(zones: ThresholdZones): (v: number) => MetricStatus {
+  return (v) => (v >= zones.warnMax ? 'Alert' : v >= zones.okMax ? 'Watch' : 'OK');
 }
 
-function pvcStatus(v: number): 'OK' | 'Watch' | 'Alert' {
-  if (v >= 2.0) return 'Alert';
-  if (v >= 1.8) return 'Watch';
-  return 'OK';
+function pvcStatusFor(zones: ThresholdZones): (v: number) => MetricStatus {
+  // Watch band: within 10 % under the limit (FRM 1.8–2.0 %).
+  return (v) => (v >= zones.warnMax ? 'Alert' : v >= zones.warnMax * 0.9 ? 'Watch' : 'OK');
 }
 
-function moistureStatus(v: number): 'OK' | 'Watch' | 'Alert' {
-  if (v >= 10) return 'Alert';
-  if (v >= 8) return 'Watch';
-  return 'OK';
+function moistureStatusFor(zones: ThresholdZones): (v: number) => MetricStatus {
+  return (v) => (v >= zones.warnMax ? 'Alert' : v >= zones.okMax ? 'Watch' : 'OK');
 }
 
-function inputMoistureStatus(v: number): 'OK' | 'Watch' | 'Alert' {
-  return v >= COMMERCIAL_INPUT_MOISTURE_ZONES.warnMax ? 'Alert' : 'OK';
+function inputMoistureStatusFor(zones: ThresholdZones): (v: number) => MetricStatus {
+  return (v) => (v >= zones.warnMax ? 'Alert' : 'OK');
 }
 
 function feedStatus(): 'OK' | 'Watch' | 'Alert' {
@@ -505,7 +518,12 @@ export function buildMetricContext(
 ): MetricWeeklyContext {
   let values: number[] = [];
   let lowerIsBetter = true;
-  let statusFn: (v: number) => 'OK' | 'Watch' | 'Alert' = chlorineStatus;
+  const zones = getCommercialZones(report);
+  const chlorineStatus = chlorineStatusFor(zones.chlorine);
+  const pvcStatus = pvcStatusFor(zones.pvc);
+  const moistureStatus = moistureStatusFor(zones.outputMoisture);
+  const inputMoistureStatus = inputMoistureStatusFor(zones.inputMoisture);
+  let statusFn: (v: number) => MetricStatus = chlorineStatus;
   const anchor = getAnchorWeekKey(report);
 
   if (metricId === 'chlorine') {
@@ -539,6 +557,15 @@ export function buildMetricContext(
         .map((w) => w.avg);
     }
     statusFn = () => 'OK';
+  } else if (isPvcStreamMetric(metricId)) {
+    const series = report.weekly_series?.find((s) => s.id === metricId);
+    values = seriesValuesUpToAnchor(series, anchor);
+    if (values.length < 2) {
+      values = weeklyAvgsFromDaily(pvcStreamPoints(report, metricId))
+        .filter((w) => weekKeyLte(w.key, anchor))
+        .map((w) => w.avg);
+    }
+    statusFn = pvcStatus;
   } else if (metricId === 'input_moisture') {
     values = weeklyPointsUpToAnchor(report, 'input_moisture').map((p) => p.value);
     statusFn = inputMoistureStatus;
@@ -803,9 +830,9 @@ export function formatDailyBucketLabel(dailyStartHour: number): string {
   return `operational days from ${String(dailyStartHour).padStart(2, '0')}:00 to ${String(dailyStartHour).padStart(2, '0')}:00 (3 plant shifts)`;
 }
 
-export function formatWeekBoundaryLabel(startHour: number): string {
-  if (startHour === 0) return 'week runs Mon 00:00–Mon 00:00 Amsterdam time';
-  return 'week runs Sun 23:00–Sun 23:00 Amsterdam time';
+export function formatWeekBoundaryLabel(startHour: number, timezoneLabel = 'Amsterdam time'): string {
+  if (startHour === 0) return `week runs Mon 00:00–Mon 00:00 ${timezoneLabel}`;
+  return `week runs Sun ${String(startHour).padStart(2, '0')}:00–Sun ${String(startHour).padStart(2, '0')}:00 ${timezoneLabel}`;
 }
 
 function utcDayKeyFromDate(date: Date): string {
@@ -1205,7 +1232,8 @@ function metricUsesShiftAveraging(metricId: string): boolean {
     metricId === 'pvc' ||
     metricId === 'ejected_pvc' ||
     metricId === 'input_moisture' ||
-    metricId === 'output_moisture'
+    metricId === 'output_moisture' ||
+    isPvcStreamMetric(metricId)
   );
 }
 
@@ -1228,8 +1256,41 @@ function averagePointsByDay(
     .map(([, row]) => ({ time: row.time, value: row.sum / row.count }));
 }
 
+/** Pad dual daily rows onto the fixed 91-day axis; missing sides are flagged. */
+function padDualDaysToGrid(
+  report: CommercialReportPayload,
+  byDay: Map<string, { time: string; label: string; primary: number; secondary: number }>,
+  present: { primary: Set<string>; secondary: Set<string> }
+): Array<{
+  time: string;
+  label: string;
+  primary: number;
+  secondary: number;
+  primaryHasData: boolean;
+  secondaryHasData: boolean;
+}> {
+  return trendDayGrid(report).map((day) => {
+    const row = byDay.get(day.key);
+    return {
+      time: row?.time ?? day.time,
+      label: day.label,
+      primary: row?.primary ?? 0,
+      secondary: row?.secondary ?? 0,
+      primaryHasData: present.primary.has(day.key),
+      secondaryHasData: present.secondary.has(day.key)
+    };
+  });
+}
+
 function dualDailyTrendFromDays(
-  days: Array<{ time: string; primary: number; secondary: number; label: string }>,
+  days: Array<{
+    time: string;
+    primary: number;
+    secondary: number;
+    label: string;
+    primaryHasData?: boolean;
+    secondaryHasData?: boolean;
+  }>,
   selectedWeekKey?: string,
   startHour = 0
 ): DualMetricBarPoint[] {
@@ -1248,6 +1309,11 @@ function dualDailyTrendFromDays(
       timeLabel: d.label,
       primary: d.primary,
       secondary: d.secondary,
+      ...(d.primaryHasData !== undefined ? { primaryHasData: d.primaryHasData } : {}),
+      ...(d.secondaryHasData !== undefined ? { secondaryHasData: d.secondaryHasData } : {}),
+      ...(d.primaryHasData !== undefined || d.secondaryHasData !== undefined
+        ? { hasData: Boolean(d.primaryHasData || d.secondaryHasData) }
+        : {}),
       isSelectedWeek: selectedWeekKey
         ? isInPlantWeek(d.time, selectedWeekKey, startHour)
         : undefined
@@ -1377,6 +1443,7 @@ function getRawDailyPoints(
   if (metricId === 'ejected_pvc') return report.ejected_pvc?.points ?? [];
   if (metricId === 'input_moisture') return report.input_moisture.points;
   if (metricId === 'output_moisture') return report.output_moisture.points;
+  if (isPvcStreamMetric(metricId)) return pvcStreamPoints(report, metricId);
   return [];
 }
 
@@ -1430,6 +1497,36 @@ export function getTrendBarData(
   return toDailyBarPoints(valid.slice(-TREND_DISPLAY_WEEKS), anchor);
 }
 
+/**
+ * Fixed day axis for the daily trend charts: prior 12 complete weeks plus the
+ * selected week (91 operational days). Days without readings stay in the axis
+ * so every week shows 7 slots and weeks line up between metrics.
+ */
+function trendDayGrid(report: CommercialReportPayload): Array<{ key: string; time: string; label: string }> {
+  const anchor = getAnchorWeekKey(report);
+  const dailyStartHour = getDailyBucketStartHour(report);
+  const startHour = getChartBucketStartHour(report);
+  let weekEndIso: string;
+  if (startHour === 0) {
+    const { year, week } = parseWeekKey(anchor);
+    const nextMonday = getMondayOfISOWeek(year, week);
+    nextMonday.setUTCDate(nextMonday.getUTCDate() + 7);
+    weekEndIso = amsterdamLocalToUtcIso(utcDayKeyFromDate(nextMonday), 0);
+  } else {
+    weekEndIso = plantWeekBounds(anchor).end;
+  }
+  let key = operationalDayKey(new Date(Date.parse(weekEndIso) - 60_000).toISOString(), dailyStartHour);
+  const keys: string[] = [];
+  for (let i = 0; i < TREND_DISPLAY_DAYS; i += 1) {
+    keys.unshift(key);
+    key = previousAmsterdamDayKey(key);
+  }
+  return keys.map((dayKey) => {
+    const time = amsterdamLocalToUtcIso(dayKey, dailyStartHour);
+    return { key: dayKey, time, label: dayLabelFromOperationalTime(time, dailyStartHour) };
+  });
+}
+
 /** Prior 12 complete weeks plus selected week, daily points with week-start labels. */
 export function getDailyTrendBarData(
   report: CommercialReportPayload,
@@ -1450,25 +1547,41 @@ export function getDailyTrendBarData(
     ? averagePointsByDay(valid, dailyStartHour)
     : valid;
 
-  const sliced = processedPoints.slice(-TREND_DISPLAY_DAYS);
-  const seenWeeks = new Set<string>();
   const startHour = getChartBucketStartHour(report);
+  const seenWeeks = new Set<string>();
+  const weekLabelOnce = (time: string) => {
+    const weekKey = plantReportingWeekKey(time, startHour);
+    if (seenWeeks.has(weekKey)) return '';
+    seenWeeks.add(weekKey);
+    return formatWeekLabel(weekKey);
+  };
 
-  return sliced.map((p, idx) => {
-    const weekKey = plantReportingWeekKey(p.time, startHour);
-    let label = '';
-    if (!seenWeeks.has(weekKey)) {
-      seenWeeks.add(weekKey);
-      label = formatWeekLabel(weekKey);
-    }
-    return {
+  if (!metricUsesShiftAveraging(metricId)) {
+    const sliced = processedPoints.slice(-TREND_DISPLAY_DAYS);
+    return sliced.map((p, idx) => ({
       idx,
       value: p.value,
-      weekLabel: label,
+      weekLabel: weekLabelOnce(p.time),
       timeLabel: dayLabelFromOperationalTime(p.time, dailyStartHour),
       dayKey: operationalDayKey(p.time, dailyStartHour),
       isLast: idx === sliced.length - 1,
       isSelectedWeek: isInPlantWeek(p.time, anchor, startHour)
+    }));
+  }
+
+  const byDay = new Map(processedPoints.map((p) => [operationalDayKey(p.time, dailyStartHour), p]));
+  const grid = trendDayGrid(report);
+  return grid.map((day, idx) => {
+    const hit = byDay.get(day.key);
+    return {
+      idx,
+      value: hit ? hit.value : 0,
+      hasData: hit != null,
+      weekLabel: weekLabelOnce(day.time),
+      timeLabel: day.label,
+      dayKey: day.key,
+      isLast: idx === grid.length - 1,
+      isSelectedWeek: isInPlantWeek(day.time, anchor, startHour)
     };
   });
 }
@@ -1596,9 +1709,10 @@ export function buildMoistureDailyTrendData(report: CommercialReportPayload): Du
     byDay.set(key, row);
   }
 
-  const days = Array.from(byDay.values())
-    .sort((a, b) => a.time.localeCompare(b.time))
-    .slice(-TREND_DISPLAY_DAYS);
+  const days = padDualDaysToGrid(report, byDay, {
+    primary: new Set(inputDaily.map((p) => operationalDayKey(p.time, dailyStartHour))),
+    secondary: new Set(outputDaily.map((p) => operationalDayKey(p.time, dailyStartHour)))
+  });
 
   return dualDailyTrendFromDays(days, anchor, startHourForFilter);
 }
@@ -1606,7 +1720,7 @@ export function buildMoistureDailyTrendData(report: CommercialReportPayload): Du
 /** Feed tonnage — prior 12 complete weeks + selected week daily trend. */
 export function buildThroughputDailyTrendData(
   report: CommercialReportPayload
-): { idx: number; label: string; weekLabel: string; timeLabel?: string; feed: number; isSelectedWeek?: boolean }[] {
+): { idx: number; label: string; weekLabel: string; timeLabel?: string; feed: number; isSelectedWeek?: boolean; hasData?: boolean; primaryHasData?: boolean }[] {
   const anchor = getAnchorWeekKey(report);
   const dailyStartHour = getDailyBucketStartHour(report);
   const byDay = new Map<string, { time: string; label: string; primary: number; secondary: number }>();
@@ -1625,9 +1739,10 @@ export function buildThroughputDailyTrendData(
     byDay.set(key, row);
   }
 
-  const days = Array.from(byDay.values())
-    .sort((a, b) => a.time.localeCompare(b.time))
-    .slice(-TREND_DISPLAY_DAYS);
+  const days = padDualDaysToGrid(report, byDay, {
+    primary: new Set(byDay.keys()),
+    secondary: new Set()
+  });
 
   return dualDailyTrendFromDays(days, anchor, startHour).map((row) => ({
     idx: row.idx,
@@ -1635,6 +1750,8 @@ export function buildThroughputDailyTrendData(
     weekLabel: row.weekLabel,
     timeLabel: row.timeLabel,
     isSelectedWeek: row.isSelectedWeek,
+    hasData: row.primaryHasData !== false,
+    primaryHasData: row.primaryHasData !== false,
     feed: row.primary
   }));
 }
@@ -1748,7 +1865,7 @@ export function getDailyBarData(
 /** Daily readings for threshold exposure baseline — keeps ~12 weeks for Δ calc. */
 export function getThresholdDailyValues(
   report: CommercialReportPayload,
-  metricId: 'chlorine' | 'pvc' | 'input_moisture' | 'output_moisture',
+  metricId: 'chlorine' | 'pvc' | 'input_moisture' | 'output_moisture' | string,
   maxPoints = TREND_WEEKS * THIS_WEEK_SHIFTS
 ): number[] {
   let points: { time: string; value: number | null }[] = [];
@@ -1760,6 +1877,7 @@ export function getThresholdDailyValues(
     }));
   } else if (metricId === 'output_moisture') points = report.output_moisture.points;
   else if (metricId === 'input_moisture') points = report.input_moisture.points;
+  else if (isPvcStreamMetric(metricId)) points = pvcStreamPoints(report, metricId);
 
   const anchor = getAnchorWeekKey(report);
   const allWeeks = Array.from(
@@ -2137,23 +2255,28 @@ export function buildCompositionDailyTrendData(
       weekKeyLte(plantReportingWeekKey(p.time, startHour), anchor)
     ),
     dailyStartHour
-  ).slice(-TREND_DISPLAY_DAYS);
+  );
+  const byDay = new Map(daily.map((p) => [operationalDayKey(p.time, dailyStartHour), p]));
 
   const seenWeeks = new Set<string>();
-  return daily.map((point, idx) => {
-    const weekKey = plantReportingWeekKey(point.time, startHour);
+  return trendDayGrid(report).map((day, idx) => {
+    const weekKey = plantReportingWeekKey(day.time, startHour);
     let weekLabel = '';
     if (!seenWeeks.has(weekKey)) {
       seenWeeks.add(weekKey);
       weekLabel = formatWeekLabel(weekKey);
     }
+    const hit = byDay.get(day.key);
     return {
       idx,
-      label: dayLabelFromOperationalTime(point.time, dailyStartHour),
+      label: day.label,
       weekLabel,
-      timeLabel: dayLabelFromOperationalTime(point.time, dailyStartHour),
-      isSelectedWeek: isInPlantWeek(point.time, anchor, startHour),
-      ...categorySharesFromComposition(point.values)
+      timeLabel: day.label,
+      isSelectedWeek: isInPlantWeek(day.time, anchor, startHour),
+      hasData: hit != null,
+      ...(hit
+        ? categorySharesFromComposition(hit.values)
+        : { classifiedRawTotal: 0, ...emptyCompositionShares() })
     };
   });
 }

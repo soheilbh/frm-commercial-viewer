@@ -234,7 +234,7 @@
 }
 
 #commercial-dashboard-report[data-a4-layout='true'] .commercial-snapshot-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--snapshot-cols, 5), minmax(0, 1fr));
 }
 
 #commercial-dashboard-report[data-a4-layout='true'] .commercial-decision-split {
@@ -337,7 +337,7 @@
 }
 
 #commercial-dashboard-report .commercial-snapshot-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--snapshot-cols, 5), minmax(0, 1fr));
 }
 
 /*

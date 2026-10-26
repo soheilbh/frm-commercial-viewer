@@ -20,3 +20,5 @@ export async function fetchCommercialSavedDashboardReport(
   }
   return res.json();
 }
+
+export type CommercialPlantId = 'frm' | 'tsp';

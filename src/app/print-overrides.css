@@ -263,7 +263,7 @@
   /* Report-scoped grids — do not rely on viewport lg: breakpoints when printing */
   #commercial-dashboard-report .commercial-snapshot-grid {
     display: grid !important;
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(var(--snapshot-cols, 5), minmax(0, 1fr)) !important;
     gap: 8px !important;
   }
 

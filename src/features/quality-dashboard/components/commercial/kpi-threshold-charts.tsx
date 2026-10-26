@@ -241,12 +241,15 @@ function SelectedWeekOverlay({
 function rollingAverageValues<T extends Record<string, unknown>>(
   data: readonly T[],
   sourceKey: string,
-  windowSize = 7
+  windowSize = 7,
+  hasDataKey = 'hasData'
 ): Array<number | null> {
   return data.map((row, idx) => {
     const start = Math.max(0, idx - windowSize + 1);
     const values = data
       .slice(start, idx + 1)
+      // Days kept only as empty axis slots must not pull the average to zero.
+      .filter((item) => item[hasDataKey] !== false)
       .map((item) => Number(item[sourceKey]))
       .filter((value) => Number.isFinite(value));
     return values.length
@@ -261,7 +264,8 @@ function RollingAverageOverlay<T extends Record<string, unknown>>({
   yMax,
   bottomOffset = 18,
   leftPad = CHART_Y_AXIS_WIDTH,
-  rightPad = 4
+  rightPad = 4,
+  hasDataKey = 'hasData'
 }: {
   data: readonly T[];
   valueKey: string;
@@ -269,9 +273,10 @@ function RollingAverageOverlay<T extends Record<string, unknown>>({
   bottomOffset?: number;
   leftPad?: number;
   rightPad?: number;
+  hasDataKey?: string;
 }) {
   if (data.length < 2 || yMax <= 0) return null;
-  const values = rollingAverageValues(data, valueKey);
+  const values = rollingAverageValues(data, valueKey, 7, hasDataKey);
   const points = values
     .map((value, idx) => {
       if (value == null || !Number.isFinite(value)) return null;
@@ -968,7 +973,7 @@ export function KpiTrendChart({
                       </div>
                     );
                   }
-                  if (barWindow === 'week') {
+                  if (barWindow === 'week' || barWindow === 'daily-trend') {
                     return formatShiftTooltipValue(Number(value), payload, 'single', (v) => {
                       const unit = metricId === 'feed_volume' ? ' t' : '%';
                       return `${v.toFixed(decimals)}${unit}`;
@@ -1017,7 +1022,7 @@ export function KpiTrendChart({
             barSize={density.maxBarSize}
             radius={density.radius}
             isAnimationActive={false}
-            shape={barWindow === 'week' ? (props) => renderShiftBarShape(props) : undefined}
+            shape={barWindow === 'week' || barWindow === 'daily-trend' ? (props) => renderShiftBarShape(props) : undefined}
           >
             {data.map((d) => (
               <Cell
@@ -1035,7 +1040,7 @@ export function KpiTrendChart({
             barSize={density.maxBarSize}
             radius={density.radius}
             isAnimationActive={false}
-            shape={barWindow === 'week' ? (props) => renderShiftBarShape(props) : undefined}
+            shape={barWindow === 'week' || barWindow === 'daily-trend' ? (props) => renderShiftBarShape(props) : undefined}
           >
             {data.map((d) => (
               <Cell
@@ -1089,6 +1094,7 @@ export type ThroughputBarPoint = {
   isSelectedWeek?: boolean;
   feed: number;
   hasData?: boolean;
+  primaryHasData?: boolean;
 };
 
 type DualBarMode = 'grouped' | 'stacked' | 'overlap';
@@ -1168,6 +1174,8 @@ function GroupedDualBarChart({
   const secondaryDomainMax = dualYAxis ? secondaryMax : yMax;
   const isTrend = barWindow === 'trend' || barWindow === 'daily-trend';
   const isShiftWeek = barWindow === 'week';
+  // Week shifts and the daily trend both carry empty slots for missing data.
+  const showMissingSlots = isShiftWeek || barWindow === 'daily-trend';
   const useIdxAxis = isTrend || isShiftWeek;
   const density = getBarDensity(data.length, barWindow);
   const barSize = density.maxBarSize;
@@ -1269,7 +1277,7 @@ function GroupedDualBarChart({
                   const seriesKey =
                     name === primaryKey ? 'primary' : name === secondaryKey ? 'secondary' : 'single';
                   if (
-                    barWindow === 'week' &&
+                    showMissingSlots &&
                     !shiftSeriesHasData(payload, seriesKey === 'single' ? undefined : seriesKey)
                   ) {
                     return (
@@ -1315,7 +1323,7 @@ function GroupedDualBarChart({
               barSize={barSize}
               isAnimationActive={false}
               shape={
-                isShiftWeek ? (props) => renderShiftBarShape(props, 'primary') : undefined
+                showMissingSlots ? (props) => renderShiftBarShape(props, 'primary') : undefined
               }
             >
               {data.map((d, i) => (
@@ -1347,7 +1355,7 @@ function GroupedDualBarChart({
               barSize={barSize}
               isAnimationActive={false}
               shape={
-                isShiftWeek ? (props) => renderShiftBarShape(props, 'secondary') : undefined
+                showMissingSlots ? (props) => renderShiftBarShape(props, 'secondary') : undefined
               }
             >
               {data.map((d, i) => (
@@ -1370,7 +1378,7 @@ function GroupedDualBarChart({
         bottomOffset={barWindow === 'trend' || barWindow === 'daily-trend' ? 18 : 0}
       />
       {showRollingAverage ? (
-        <RollingAverageOverlay data={data} valueKey={primaryKey} yMax={yMax} />
+        <RollingAverageOverlay data={data} valueKey={primaryKey} yMax={yMax} hasDataKey='primaryHasData' />
       ) : null}
       {showBottomLabels ? (
         <ChartBottomLabels
@@ -1429,7 +1437,9 @@ export function MoistureGroupedBarChart({
   fillHeight = false,
   window: barWindow = 'trend',
   showInput = true,
-  showOutput = true
+  showOutput = true,
+  inputZones = COMMERCIAL_INPUT_MOISTURE_ZONES,
+  outputZones = COMMERCIAL_OUTPUT_MOISTURE_ZONES
 }: {
   data: DualMetricBarPoint[];
   height?: number;
@@ -1437,10 +1447,24 @@ export function MoistureGroupedBarChart({
   window?: 'trend' | 'week' | 'daily-trend';
   showInput?: boolean;
   showOutput?: boolean;
+  /** Plant-specific limits (from the report config); FRM constants by default. */
+  inputZones?: ThresholdZones;
+  outputZones?: ThresholdZones;
 }) {
+  const inputRefLines: RefLine[] =
+    inputZones === COMMERCIAL_INPUT_MOISTURE_ZONES
+      ? MOISTURE_INPUT_REF_LINES
+      : [{ value: inputZones.warnMax, stroke: KPI_THRESHOLD_COLORS.above, dash: '5 4' }];
+  const outputRefLines: RefLine[] =
+    outputZones === COMMERCIAL_OUTPUT_MOISTURE_ZONES
+      ? MOISTURE_OUTPUT_REF_LINES
+      : [
+          { value: outputZones.okMax, stroke: KPI_THRESHOLD_COLORS.near, dash: '5 4' },
+          { value: outputZones.warnMax, stroke: KPI_THRESHOLD_COLORS.above, dash: '5 4' }
+        ];
   const refLines = [
-    ...(showInput ? MOISTURE_INPUT_REF_LINES : []),
-    ...(showOutput ? MOISTURE_OUTPUT_REF_LINES : [])
+    ...(showInput ? inputRefLines : []),
+    ...(showOutput ? outputRefLines : [])
   ];
 
   const mapped = data.map((d, i) => ({
@@ -1466,8 +1490,8 @@ export function MoistureGroupedBarChart({
       height={height}
       fillHeight={fillHeight}
       dualMode='overlap'
-      primaryZones={showInput ? COMMERCIAL_INPUT_MOISTURE_ZONES : undefined}
-      secondaryZones={showOutput ? COMMERCIAL_OUTPUT_MOISTURE_ZONES : undefined}
+      primaryZones={showInput ? inputZones : undefined}
+      secondaryZones={showOutput ? outputZones : undefined}
       refLines={refLines}
       primaryOpacity={0.48}
       showPrimary={showInput}
@@ -1616,7 +1640,9 @@ export function FeedstockStackedAreaChart({
         rightPad={4}
         bottomOffset={chartWindow === 'trend' || chartWindow === 'daily-trend' ? 18 : 0}
       />
-      {isShiftWeek ? <MissingShiftOverlay data={data} leftPad={0} rightPad={4} /> : null}
+      {isShiftWeek || chartWindow === 'daily-trend' ? (
+        <MissingShiftOverlay data={data} leftPad={0} rightPad={4} />
+      ) : null}
     </div>
   );
 }

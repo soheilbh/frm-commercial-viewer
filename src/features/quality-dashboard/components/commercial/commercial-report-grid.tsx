@@ -35,17 +35,21 @@ import {
   ThresholdDonutChart
 } from '@/features/quality-dashboard/components/commercial/kpi-threshold-charts';
 import {
-  COMMERCIAL_CHLORINE_ZONES,
-  COMMERCIAL_INPUT_MOISTURE_ZONES,
-  COMMERCIAL_OUTPUT_MOISTURE_ZONES,
-  COMMERCIAL_PVC_ZONES,
   KPI_THRESHOLD_COLORS,
   SORTER_Q_THRESHOLD,
   THEME_SEMANTIC,
   ZONE_TEXT_CLASS,
   diffToneClass,
+  formatZoneLimit,
+  getCommercialZones,
+  type CommercialZones,
   type ThresholdZones
 } from '@/features/quality-dashboard/lib/kpi-threshold-colors';
+import {
+  getCommercialPlant,
+  type CommercialPlantDefinition,
+  type CommercialPlantId
+} from '@/features/quality-dashboard/lib/commercial-plant';
 import {
   formatChartShiftLabel,
   formatDailyBucketLabel,
@@ -71,7 +75,7 @@ import {
   ArrowUp,
   Minus
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Bar,
   BarChart,
@@ -929,10 +933,11 @@ function MoistureDistributionCard({
   const trendData = buildMoistureDailyTrendData(report);
   const weekData = buildMoistureDailyData(report);
 
+  const zones = getCommercialZones(report);
   const moInBaselineDist = buildThresholdDistribution(
     getThresholdDailyValues(report, 'input_moisture'),
-    COMMERCIAL_INPUT_MOISTURE_ZONES.okMax,
-    COMMERCIAL_INPUT_MOISTURE_ZONES.warnMax,
+    zones.inputMoisture.okMax,
+    zones.inputMoisture.warnMax,
     0,
     'input moisture'
   );
@@ -1003,6 +1008,8 @@ function MoistureDistributionCard({
                     window='daily-trend'
                     showInput={showInput}
                     showOutput={showOutput}
+                    inputZones={zones.inputMoisture}
+                    outputZones={zones.outputMoisture}
                   />
                 ) : (
                   <DisabledChartPlaceholder />
@@ -1026,6 +1033,8 @@ function MoistureDistributionCard({
                     window='week'
                     showInput={showInput}
                     showOutput={showOutput}
+                    inputZones={zones.inputMoisture}
+                    outputZones={zones.outputMoisture}
                   />
                 ) : (
                   <DisabledChartPlaceholder />
@@ -1044,7 +1053,11 @@ function MoistureDistributionCard({
             </div>
             {showOutput ? <KpiCardFooter
               dist={moOutDist}
-              legend={{ near: '8–10%', within: '≤8%', above: '>10%' }}
+              legend={{
+                near: `${formatZoneLimit(zones.outputMoisture.okMax)}–${formatZoneLimit(zones.outputMoisture.warnMax)}`,
+                within: `≤${formatZoneLimit(zones.outputMoisture.okMax)}`,
+                above: `>${formatZoneLimit(zones.outputMoisture.warnMax)}`
+              }}
             /> : null}
           </div>
         </div>
@@ -1763,7 +1776,9 @@ function CommercialSnapshot({
   pvcDist,
   moInDist,
   qDist,
-  visibility
+  visibility,
+  plant,
+  zones
 }: {
   report: CommercialReportPayload;
   clDist: ReturnType<typeof buildThresholdDistribution>;
@@ -1771,6 +1786,8 @@ function CommercialSnapshot({
   moInDist: ReturnType<typeof buildThresholdDistribution>;
   qDist: ReturnType<typeof buildThresholdDistribution>;
   visibility: CommercialKpiVisibility;
+  plant: CommercialPlantDefinition;
+  zones: CommercialZones;
 }) {
   const cl = buildMetricContext(report, 'chlorine');
   const pvc = buildMetricContext(report, 'pvc');
@@ -1805,29 +1822,29 @@ function CommercialSnapshot({
     },
     {
       label: 'Input PVC',
-      source: 'Optical sorter feed mix',
+      source: plant.labels.pvcSource,
       value: pvc.currentWeek != null ? `${pvc.currentWeek.toFixed(2)}%` : '—',
       delta: signedValue(pvcDelta, 2, ' pp'),
       deltaValue: pvcDelta,
       deltaGood: favourableDelta(pvcDelta, true),
       avgLabel: pvc.avg12Week != null ? `${pvc.avg12Week.toFixed(2)}%` : '—',
-      context: `${pvcDist.abovePct}% above threshold 2.0%`,
+      context: `${pvcDist.abovePct}% above threshold ${formatZoneLimit(zones.pvc.warnMax)}`,
       contextTone: pvcDist.abovePct > 0 ? ZONE_TEXT_CLASS.above : ZONE_TEXT_CLASS.within,
       visible: visibility.pvc
     },
     {
       label: 'Chlorine',
-      source: 'Pre-pelletizer quality',
+      source: plant.labels.chlorineSource,
       value: cl.currentWeek != null ? `${cl.currentWeek.toFixed(2)}%` : '—',
       delta: signedValue(clDelta, 2, ' pp'),
       deltaValue: clDelta,
       deltaGood: favourableDelta(clDelta, true),
       avgLabel: cl.avg12Week != null ? `${cl.avg12Week.toFixed(2)}%` : '—',
-      context: `${clDist.abovePct}% above threshold 1.2%`,
+      context: `${clDist.abovePct}% above threshold ${formatZoneLimit(zones.chlorine.warnMax)}`,
       contextTone: clDist.abovePct > 0 ? ZONE_TEXT_CLASS.above : ZONE_TEXT_CLASS.within,
       visible: visibility.chlorine
     },
-    {
+    ...(plant.hasEjectedStream ? [{
       label: 'Ejected PVC',
       source: 'Reject stream',
       value: ejected.currentWeek != null ? `${ejected.currentWeek.toFixed(2)}%` : '—',
@@ -1849,16 +1866,16 @@ function CommercialSnapshot({
           : `Q ${qWeek.toFixed(1)}× · within ${SORTER_Q_THRESHOLD}×`,
       contextTone: qWeek != null && qWeek >= SORTER_Q_THRESHOLD ? ZONE_TEXT_CLASS.within : ZONE_TEXT_CLASS.above,
       visible: visibility.ejectedPvc
-    },
+    } satisfies SnapshotKpi] : []),
     {
       label: 'Input moisture',
-      source: 'Pre-dryer feed moisture',
+      source: plant.labels.inputMoistureSource,
       value: moIn.currentWeek != null ? `${moIn.currentWeek.toFixed(1)}%` : '—',
       delta: signedValue(moInDelta, 1, ' pp'),
       deltaValue: moInDelta,
       deltaGood: favourableDelta(moInDelta, true),
       avgLabel: moIn.avg12Week != null ? `${moIn.avg12Week.toFixed(1)}%` : '—',
-      context: `${moInDist.abovePct}% above threshold 25%`,
+      context: `${moInDist.abovePct}% above threshold ${formatZoneLimit(zones.inputMoisture.warnMax)}`,
       contextTone: moInDist.abovePct > 0 ? ZONE_TEXT_CLASS.above : ZONE_TEXT_CLASS.within,
       visible: visibility.inputMoisture
     }
@@ -1872,7 +1889,13 @@ function CommercialSnapshot({
         </h3>
         <p className='text-[10px] text-muted-foreground'>This week vs prior 12 complete weeks</p>
       </div>
-      <div className='commercial-snapshot-grid grid w-full grid-cols-5 gap-2'>
+      <div
+        className='commercial-snapshot-grid grid w-full gap-2'
+        style={{
+          ['--snapshot-cols' as string]: items.length,
+          gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`
+        } as CSSProperties}
+      >
         {items.map((item) => <SnapshotKpiCard key={item.label} item={item} />)}
       </div>
     </section>
@@ -1933,7 +1956,9 @@ function SpecificationCoverage({
   pvcDist,
   moInDist,
   qDist,
-  visibility
+  visibility,
+  plant,
+  zones
 }: {
   report: CommercialReportPayload;
   clDist: ReturnType<typeof buildThresholdDistribution>;
@@ -1941,6 +1966,8 @@ function SpecificationCoverage({
   moInDist: ReturnType<typeof buildThresholdDistribution>;
   qDist: ReturnType<typeof buildThresholdDistribution>;
   visibility: CommercialKpiVisibility;
+  plant: CommercialPlantDefinition;
+  zones: CommercialZones;
 }) {
   const cl = buildMetricContext(report, 'chlorine');
   const pvc = buildMetricContext(report, 'pvc');
@@ -1964,7 +1991,7 @@ function SpecificationCoverage({
       <CardContent className='flex flex-col gap-1.5 px-3 pb-2.5'>
         <SpecificationCoverageRow
           label='Input PVC'
-          basis='Threshold 2%'
+          basis={`Threshold ${formatZoneLimit(zones.pvc.warnMax)}`}
           current={pvc.currentWeek != null ? `avg ${pvc.currentWeek.toFixed(2)}%` : 'no average'}
           dist={pvcDist}
           hasNear={false}
@@ -1972,34 +1999,40 @@ function SpecificationCoverage({
         />
         <SpecificationCoverageRow
           label='Chlorine'
-          basis='Threshold 1.2%'
+          basis={`Threshold ${formatZoneLimit(zones.chlorine.warnMax)}`}
           current={cl.currentWeek != null ? `avg ${cl.currentWeek.toFixed(2)}%` : 'no average'}
           dist={clDist}
           visible={visibility.chlorine}
         />
         <SpecificationCoverageRow
           label='Input moisture'
-          basis='Threshold 25%'
+          basis={`Threshold ${formatZoneLimit(zones.inputMoisture.warnMax)}`}
           current={moIn.currentWeek != null ? `avg ${moIn.currentWeek.toFixed(1)}%` : 'no average'}
           dist={moInDist}
           hasNear={false}
           visible={visibility.inputMoisture}
         />
-        <SpecificationCoverageRow
-          label='Sorter Q'
-          basis={`Threshold ${SORTER_Q_THRESHOLD}×`}
-          current={qWeek != null ? `avg ${qWeek.toFixed(2)}×` : 'no average'}
-          dist={qDist}
-          hasNear={false}
-          breachWord='below'
-          visible={visibility.ejectedPvc && visibility.pvc}
-        />
+        {plant.hasEjectedStream ? (
+          <SpecificationCoverageRow
+            label='Sorter Q'
+            basis={`Threshold ${SORTER_Q_THRESHOLD}×`}
+            current={qWeek != null ? `avg ${qWeek.toFixed(2)}×` : 'no average'}
+            dist={qDist}
+            hasNear={false}
+            breachWord='below'
+            visible={visibility.ejectedPvc && visibility.pvc}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function commercialMovementItems(report: CommercialReportPayload, visibility: CommercialKpiVisibility) {
+function commercialMovementItems(
+  report: CommercialReportPayload,
+  visibility: CommercialKpiVisibility,
+  plant: CommercialPlantDefinition
+) {
   const specs = [
     {
       id: 'feed_volume',
@@ -2043,7 +2076,7 @@ function commercialMovementItems(report: CommercialReportPayload, visibility: Co
     }
   ] as const;
 
-  return specs.map((spec) => {
+  return specs.filter((spec) => plant.hasEjectedStream || spec.id !== 'ejected_pvc').map((spec) => {
     const comparison = report.comparisons.find((item) => item.id === spec.id);
     const pct = comparison?.difference_pct ?? 0;
     const diff = comparison?.difference;
@@ -2074,8 +2107,16 @@ function commercialMovementItems(report: CommercialReportPayload, visibility: Co
   });
 }
 
-function KeyMovements({ report, visibility }: { report: CommercialReportPayload; visibility: CommercialKpiVisibility }) {
-  const items = commercialMovementItems(report, visibility);
+function KeyMovements({
+  report,
+  visibility,
+  plant
+}: {
+  report: CommercialReportPayload;
+  visibility: CommercialKpiVisibility;
+  plant: CommercialPlantDefinition;
+}) {
+  const items = commercialMovementItems(report, visibility, plant);
   const visibleItems = items.filter((item) => item.visible);
   const extent = Math.max(1, ...visibleItems.map((item) => Math.abs(item.value)));
 
@@ -2130,7 +2171,9 @@ function CommercialDecisionLayer({
   pvcDist,
   moInDist,
   qDist,
-  visibility
+  visibility,
+  plant,
+  zones
 }: {
   report: CommercialReportPayload;
   clDist: ReturnType<typeof buildThresholdDistribution>;
@@ -2138,25 +2181,30 @@ function CommercialDecisionLayer({
   moInDist: ReturnType<typeof buildThresholdDistribution>;
   qDist: ReturnType<typeof buildThresholdDistribution>;
   visibility: CommercialKpiVisibility;
+  plant: CommercialPlantDefinition;
+  zones: CommercialZones;
 }) {
   return (
     <div className='flex flex-col gap-2'>
-      <CommercialSnapshot report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} qDist={qDist} visibility={visibility} />
+      <CommercialSnapshot report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} qDist={qDist} visibility={visibility} plant={plant} zones={zones} />
       <div className='commercial-decision-split grid grid-cols-1 items-stretch gap-2'>
-        <SpecificationCoverage report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} qDist={qDist} visibility={visibility} />
-        <KeyMovements report={report} visibility={visibility} />
+        <SpecificationCoverage report={report} clDist={clDist} pvcDist={pvcDist} moInDist={moInDist} qDist={qDist} visibility={visibility} plant={plant} zones={zones} />
+        <KeyMovements report={report} visibility={visibility} plant={plant} />
       </div>
     </div>
   );
 }
 
-function ReportMethodNote({ report }: { report: CommercialReportPayload }) {
+function ReportMethodNote({ report, plant }: { report: CommercialReportPayload; plant: CommercialPlantDefinition }) {
   const startHour = getChartBucketStartHour(report);
   const dailyStartHour = getDailyBucketStartHour(report);
   const note = [
     `W${report.week_number ?? '—'} is compared with the prior 12 complete weeks`,
     'trend panels show prior 12W plus this week',
-    `${formatWeekBoundaryLabel(startHour)}; chart buckets use ${formatChartShiftLabel(startHour)}; daily trends use ${formatDailyBucketLabel(dailyStartHour)}`
+    `${formatWeekBoundaryLabel(startHour, plant.timezoneLabel)}; chart buckets use ${formatChartShiftLabel(startHour)}; daily trends use ${formatDailyBucketLabel(dailyStartHour)}`,
+    ...(plant.id === 'tsp'
+      ? ['Input PVC is the area-weighted mix of OS01–OS04; Lights (OS01+OS02) and Mediums (OS03+OS04) are shown separately; chlorine and input moisture come from the CB20B analyser before the dryer']
+      : [])
   ].join(' · ');
 
   return (
@@ -2167,10 +2215,10 @@ function ReportMethodNote({ report }: { report: CommercialReportPayload }) {
   );
 }
 
-function formatReportCreatedAt(iso: string): string {
+function formatReportCreatedAt(iso: string, timeZone: string): string {
   try {
     return new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Amsterdam',
+      timeZone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -2183,34 +2231,38 @@ function formatReportCreatedAt(iso: string): string {
   }
 }
 
-function ReportCreatedFooter({ report }: { report: CommercialReportPayload }) {
+function ReportCreatedFooter({ report, plant }: { report: CommercialReportPayload; plant: CommercialPlantDefinition }) {
   return (
     <p className='-mt-1 px-1 text-right text-[8px] leading-none text-muted-foreground/55 print:text-[7px]'>
-      Created {formatReportCreatedAt(report.generated_at)} Amsterdam time
+      Created {formatReportCreatedAt(report.generated_at, plant.timezone)} {plant.timezoneLabel}
     </p>
   );
 }
 
 export function CommercialReportGrid({
   report,
-  visibility = DEFAULT_COMMERCIAL_KPI_VISIBILITY
+  visibility = DEFAULT_COMMERCIAL_KPI_VISIBILITY,
+  plant: plantId
 }: {
   report: CommercialReportPayload;
   visibility?: CommercialKpiVisibility;
+  plant?: CommercialPlantId;
 }) {
+  const plant = getCommercialPlant(report.plant ?? plantId);
+  const zones = getCommercialZones(report);
   const clCtx = buildMetricContext(report, 'chlorine');
   const pvcCtx = buildMetricContext(report, 'pvc');
   const clDaily = getThisWeekDailyValues(report, 'chlorine');
   const clDist = thresholdDistributionFromExposure(
     report,
     'chlorine',
-    buildThresholdDistribution(clDaily, COMMERCIAL_CHLORINE_ZONES.okMax, COMMERCIAL_CHLORINE_ZONES.warnMax, 0, 'chlorine')
+    buildThresholdDistribution(clDaily, zones.chlorine.okMax, zones.chlorine.warnMax, 0, 'chlorine')
   );
   const pvcDaily = getThisWeekDailyValues(report, 'pvc');
   const pvcDist = thresholdDistributionFromExposure(
     report,
     'pvc',
-    buildThresholdDistribution(pvcDaily, COMMERCIAL_PVC_ZONES.okMax, COMMERCIAL_PVC_ZONES.warnMax, 0, 'input PVC')
+    buildThresholdDistribution(pvcDaily, zones.pvc.okMax, zones.pvc.warnMax, 0, 'input PVC')
   );
   const moInDaily = getThisWeekDailyValues(report, 'input_moisture');
   const moInDist = thresholdDistributionFromExposure(
@@ -2218,8 +2270,8 @@ export function CommercialReportGrid({
     'input_moisture',
     buildThresholdDistribution(
       moInDaily,
-      COMMERCIAL_INPUT_MOISTURE_ZONES.okMax,
-      COMMERCIAL_INPUT_MOISTURE_ZONES.warnMax,
+      zones.inputMoisture.okMax,
+      zones.inputMoisture.warnMax,
       0,
       'input moisture'
     )
@@ -2227,11 +2279,14 @@ export function CommercialReportGrid({
   const moOutDaily = getThisWeekDailyValues(report, 'output_moisture');
   const moOutDist = buildThresholdDistribution(
     moOutDaily,
-    COMMERCIAL_OUTPUT_MOISTURE_ZONES.okMax,
-    COMMERCIAL_OUTPUT_MOISTURE_ZONES.warnMax,
+    zones.outputMoisture.okMax,
+    zones.outputMoisture.warnMax,
     0,
     'output moisture'
   );
+  const pvcStreams = report.pvc_streams ?? [];
+  const pvcLegend = { limit: formatZoneLimit(zones.pvc.warnMax), within: `<${formatZoneLimit(zones.pvc.warnMax)}` };
+  const pvcRefLines = [{ value: zones.pvc.warnMax, stroke: KPI_THRESHOLD_COLORS.above }];
   const qSamples = getThisWeekSorterQValues(report);
   const qBelow = qSamples.filter((value) => value < SORTER_Q_THRESHOLD).length;
   const qDist = buildThresholdDistribution([], SORTER_Q_THRESHOLD, SORTER_Q_THRESHOLD, 0, 'sorter Q');
@@ -2254,6 +2309,8 @@ export function CommercialReportGrid({
         moInDist={moInDist}
         qDist={qDist}
         visibility={visibility}
+        plant={plant}
+        zones={zones}
       />
 
       <div className='flex items-center gap-3 px-0.5 pt-1'>
@@ -2268,39 +2325,72 @@ export function CommercialReportGrid({
 
         <QualityDistributionCard
           title='Input PVC'
-          sub='Feed composition'
+          sub={plant.labels.pvcSub}
           report={report}
           metricId='pvc'
           ctx={pvcCtx}
-          thresholdZones={COMMERCIAL_PVC_ZONES}
+          thresholdZones={zones.pvc}
           dist={pvcDist}
           hasNearZone={false}
-          legend={{ limit: '2.0%', within: '<2.0%' }}
-          refLines={[{ value: COMMERCIAL_PVC_ZONES.warnMax, stroke: KPI_THRESHOLD_COLORS.above }]}
+          legend={pvcLegend}
+          refLines={pvcRefLines}
           decimals={2}
           trendWindow='daily-trend'
           visible={visibility.pvc}
         />
 
+        {pvcStreams.map((stream) => {
+          const streamDaily = getThisWeekDailyValues(report, stream.id);
+          const streamDist = thresholdDistributionFromExposure(
+            report,
+            stream.id,
+            buildThresholdDistribution(streamDaily, zones.pvc.okMax, zones.pvc.warnMax, 0, stream.label)
+          );
+          return (
+            <QualityDistributionCard
+              key={stream.id}
+              title={plant.streamRows[stream.id]?.title ?? `${stream.label.replace(/\s*\(.*\)$/, '')} PVC`}
+              sub={plant.streamRows[stream.id]?.sub ?? stream.sorters.map((s) => s.toUpperCase()).join(' + ')}
+              report={report}
+              metricId={stream.id}
+              ctx={buildMetricContext(report, stream.id)}
+              thresholdZones={zones.pvc}
+              dist={streamDist}
+              hasNearZone={false}
+              legend={pvcLegend}
+              refLines={pvcRefLines}
+              decimals={2}
+              trendWindow='daily-trend'
+              visible={visibility.pvc}
+            />
+          );
+        })}
+
         <QualityDistributionCard
           title='Chlorine'
-          sub='Pre-pelletizer quality'
+          sub={plant.labels.chlorineSub}
           report={report}
           metricId='chlorine'
           ctx={clCtx}
-          thresholdZones={COMMERCIAL_CHLORINE_ZONES}
+          thresholdZones={zones.chlorine}
           dist={clDist}
-          legend={{ limit: '1.2%', near: '0.8–1.2%', within: '≤0.8%' }}
+          legend={{
+            limit: formatZoneLimit(zones.chlorine.warnMax),
+            near: `${formatZoneLimit(zones.chlorine.okMax)}–${formatZoneLimit(zones.chlorine.warnMax)}`,
+            within: `≤${formatZoneLimit(zones.chlorine.okMax)}`
+          }}
           refLines={[
-            { value: COMMERCIAL_CHLORINE_ZONES.okMax, stroke: KPI_THRESHOLD_COLORS.near },
-            { value: COMMERCIAL_CHLORINE_ZONES.warnMax, stroke: KPI_THRESHOLD_COLORS.above }
+            { value: zones.chlorine.okMax, stroke: KPI_THRESHOLD_COLORS.near },
+            { value: zones.chlorine.warnMax, stroke: KPI_THRESHOLD_COLORS.above }
           ]}
           decimals={2}
           trendWindow='daily-trend'
           visible={visibility.chlorine}
         />
 
-        <EjectedPvcCard report={report} visible={visibility.ejectedPvc} />
+        {plant.hasEjectedStream ? (
+          <EjectedPvcCard report={report} visible={visibility.ejectedPvc} />
+        ) : null}
 
         <MoistureDistributionCard
           report={report}
@@ -2313,8 +2403,8 @@ export function CommercialReportGrid({
         <FeedstockPanel report={report} visible={visibility.composition} />
       </div>
 
-      <ReportMethodNote report={report} />
-      <ReportCreatedFooter report={report} />
+      <ReportMethodNote report={report} plant={plant} />
+      <ReportCreatedFooter report={report} plant={plant} />
     </div>
   );
 }
