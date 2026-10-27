@@ -48,10 +48,29 @@ function ChartContainer({
 }) {
   const uniqueId = React.useId();
   const chartId = `chart-${id || uniqueId.replace(/:/g, '')}`;
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  // ResponsiveContainer also renders at a measured size of 0 (before layout or
+  // while hidden). Every bar then sits at the same x and recharts' bar keys
+  // (x-y-value) collide. Render the chart only once the box has a real size.
+  const [hasSize, setHasSize] = React.useState(false);
+
+  React.useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const update = () => {
+      const { width, height } = element.getBoundingClientRect();
+      setHasSize(width > 0 && height > 0);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <ChartContext.Provider value={{ config }}>
       <div
+        ref={containerRef}
         data-slot='chart'
         data-chart={chartId}
         className={cn(
@@ -62,9 +81,11 @@ function ChartContainer({
       >
         <ChartStyle id={chartId} config={config} />
         {/* adding debounce will fix chart laggy behavior while animating */}
-        <RechartsPrimitive.ResponsiveContainer width="100%" height="100%">
-          {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        {hasSize ? (
+          <RechartsPrimitive.ResponsiveContainer width="100%" height="100%">
+            {children}
+          </RechartsPrimitive.ResponsiveContainer>
+        ) : null}
       </div>
     </ChartContext.Provider>
   );
