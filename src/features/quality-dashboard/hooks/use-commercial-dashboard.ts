@@ -1,6 +1,9 @@
 'use client';
 
-import { fetchCommercialSavedDashboardReport } from '@/features/quality-dashboard/api/client';
+import {
+  fetchCommercialSavedDashboardReport,
+  type CommercialPlantId
+} from '@/features/quality-dashboard/api/client';
 import type { CommercialReportPayload } from '@/features/quality-dashboard/api/types';
 import {
   getCompletedWeekKey,
@@ -19,7 +22,7 @@ function getInitialWeekKey(): string {
   return getCompletedWeekKey();
 }
 
-export function useCommercialDashboard() {
+export function useCommercialDashboard(plant: CommercialPlantId = 'frm') {
   const [selectedWeekKey, setSelectedWeekKey] = useState<string>(() => getInitialWeekKey());
   const [baseReport, setBaseReport] = useState<CommercialReportPayload | null>(null);
   const [savedGeneratedAt, setSavedGeneratedAt] = useState<string | null>(null);
@@ -31,8 +34,8 @@ export function useCommercialDashboard() {
     setError(null);
     try {
       const { year, week } = parseWeekKey(selectedWeekKey);
-      const saved = await fetchCommercialSavedDashboardReport(year, week);
-      setBaseReport({ ...saved.payload, selected_week_key: selectedWeekKey });
+      const saved = await fetchCommercialSavedDashboardReport(year, week, plant);
+      setBaseReport({ ...saved.payload, plant: saved.payload.plant ?? plant, selected_week_key: selectedWeekKey });
       setSavedGeneratedAt(saved.generated_at ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load commercial dashboard';
@@ -46,7 +49,7 @@ export function useCommercialDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [selectedWeekKey]);
+  }, [selectedWeekKey, plant]);
 
   useEffect(() => {
     void load();

@@ -21,6 +21,8 @@ import {
   reportFilename
 } from '@/features/quality-dashboard/lib/export-report';
 import type { CommercialReportPayload } from '@/features/quality-dashboard/api/types';
+import { plantFromParam } from '@/features/quality-dashboard/api/client';
+import { getCommercialPlant } from '@/features/quality-dashboard/lib/commercial-plant';
 import { format } from 'date-fns';
 import { ChevronDown, Eye, FileImage, Loader2, Printer, FileText } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -30,7 +32,6 @@ import { cn } from '@/lib/utils';
 import { toast, Toaster } from 'sonner';
 
 const A4_REPORT_WIDTH = 1123;
-const KPI_VISIBILITY_STORAGE_KEY = 'frm-commercial-kpi-visibility';
 
 const KPI_VISIBILITY_OPTIONS: Array<{
   key: keyof CommercialKpiVisibility;
@@ -44,10 +45,10 @@ const KPI_VISIBILITY_OPTIONS: Array<{
   { key: 'composition', label: 'Composition' }
 ];
 
-function loadKpiVisibility(): CommercialKpiVisibility {
+function loadKpiVisibility(storageKey: string): CommercialKpiVisibility {
   if (typeof window === 'undefined') return DEFAULT_COMMERCIAL_KPI_VISIBILITY;
   try {
-    const raw = window.localStorage.getItem(KPI_VISIBILITY_STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return DEFAULT_COMMERCIAL_KPI_VISIBILITY;
     return { ...DEFAULT_COMMERCIAL_KPI_VISIBILITY, ...JSON.parse(raw) };
   } catch {
@@ -95,6 +96,8 @@ function reportComparisonPeriodLabel(report: CommercialReportPayload): string {
 export function CommercialDashboardView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const plantId = plantFromParam(searchParams.get('plant'));
+  const plant = getCommercialPlant(plantId);
   const {
     baseReport,
     loading,
@@ -103,7 +106,7 @@ export function CommercialDashboardView() {
     selectedWeekKey,
     setSelectedWeekKey,
     reload
-  } = useCommercialDashboard();
+  } = useCommercialDashboard(plantId);
   const [exporting, setExporting] = useState(false);
   const [isPrintView, setIsPrintView] = useState(true);
   const [a4Scale, setA4Scale] = useState(1);
@@ -137,14 +140,18 @@ export function CommercialDashboardView() {
   }, [selectedWeekKey, router]);
 
   useEffect(() => {
-    setKpiVisibility(loadKpiVisibility());
+    document.title = plant.reportTitle;
+  }, [plant.reportTitle]);
+
+  useEffect(() => {
+    setKpiVisibility(loadKpiVisibility(plant.kpiVisibilityStorageKey));
     setKpiVisibilityLoaded(true);
-  }, []);
+  }, [plant.kpiVisibilityStorageKey]);
 
   useEffect(() => {
     if (!kpiVisibilityLoaded) return;
-    window.localStorage.setItem(KPI_VISIBILITY_STORAGE_KEY, JSON.stringify(kpiVisibility));
-  }, [kpiVisibility, kpiVisibilityLoaded]);
+    window.localStorage.setItem(plant.kpiVisibilityStorageKey, JSON.stringify(kpiVisibility));
+  }, [kpiVisibility, kpiVisibilityLoaded, plant.kpiVisibilityStorageKey]);
 
   useEffect(() => {
     if (!isPrintView || exporting) {
@@ -174,7 +181,7 @@ export function CommercialDashboardView() {
     });
     await new Promise((resolve) => setTimeout(resolve, 600));
     try {
-      const filename = reportFilename('frm-commercial-weekly-review', report.generated_at, {
+      const filename = reportFilename(plant.filenamePrefix, report.generated_at, {
         weekNumber: report.week_number,
         exportedAt: new Date()
       });
@@ -324,7 +331,7 @@ export function CommercialDashboardView() {
           <div className='rounded-xl border border-dashed bg-card p-8 text-center'>
             <h2 className='text-base font-semibold'>No saved commercial report for this week</h2>
             <p className='text-muted-foreground mt-1 text-sm'>
-              Select another week, or ask the FRM team to run the calculation for this period.
+              Select another week, or ask the {plant.code} team to run the calculation for this period.
             </p>
           </div>
         ) : (
@@ -351,7 +358,7 @@ export function CommercialDashboardView() {
               <div className='report-header flex flex-wrap items-start justify-between gap-2 border-b border-border/60 pb-2'>
                 <div>
                   <div className='flex flex-wrap items-center gap-2'>
-                    <h2 className='text-base font-bold tracking-tight'>FRM Weekly Commercial Review</h2>
+                    <h2 className='text-base font-bold tracking-tight'>{plant.reportTitle}</h2>
                     {report.week_number ? (
                       <Badge variant='secondary' className='font-mono text-[10px]'>
                         W{report.week_number}
@@ -362,7 +369,7 @@ export function CommercialDashboardView() {
                 </div>
                 <ReportHeaderLogo showOnScreen />
               </div>
-              <CommercialReportGrid report={report} visibility={kpiVisibility} />
+              <CommercialReportGrid report={report} visibility={kpiVisibility} plant={plantId} />
             </div>
           </div>
         )}
