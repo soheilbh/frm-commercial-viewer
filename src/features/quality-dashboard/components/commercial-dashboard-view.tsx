@@ -22,7 +22,8 @@ import {
 } from '@/features/quality-dashboard/lib/export-report';
 import type { CommercialReportPayload } from '@/features/quality-dashboard/api/types';
 import { plantFromParam } from '@/features/quality-dashboard/api/client';
-import { getCommercialPlant } from '@/features/quality-dashboard/lib/commercial-plant';
+import { getCommercialPlant, type CommercialPlantId } from '@/features/quality-dashboard/lib/commercial-plant';
+import { CommercialPlantSwitch } from '@/features/quality-dashboard/components/commercial-plant-switch';
 import { format } from 'date-fns';
 import { ChevronDown, Eye, FileImage, Loader2, Printer, FileText } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -98,6 +99,13 @@ export function CommercialDashboardView() {
   const searchParams = useSearchParams();
   const plantId = plantFromParam(searchParams.get('plant'));
   const plant = getCommercialPlant(plantId);
+  const switchPlant = (next: CommercialPlantId) => {
+    const params = new URLSearchParams(window.location.search);
+    // FRM is the default, so its URL carries no plant parameter.
+    if (next === 'tsp') params.set('plant', 'tsp');
+    else params.delete('plant');
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  };
   const {
     baseReport,
     loading,
@@ -246,6 +254,7 @@ export function CommercialDashboardView() {
       <PageContainer>
         <div className='no-print mb-3 flex flex-wrap items-center justify-end gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
+            <CommercialPlantSwitch value={plantId} onChange={switchPlant} />
             {weekOptions.length > 0 ? (
               <CommercialWeekSelector
                 weeks={weekOptions}

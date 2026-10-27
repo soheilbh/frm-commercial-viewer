@@ -9,6 +9,8 @@ export type CommercialPlantDefinition = {
   reportTitle: string;
   filenamePrefix: string;
   kpiVisibilityStorageKey: string;
+  /** In-app route of this plant's dashboard (frm-ai frontend). */
+  dashboardPath: string;
   /** Plant-local time used for footer timestamps and shift labels. */
   timezone: string;
   timezoneLabel: string;
@@ -34,6 +36,7 @@ export const COMMERCIAL_PLANTS: Record<CommercialPlantId, CommercialPlantDefinit
     reportTitle: 'FRM Weekly Commercial Review',
     filenamePrefix: 'frm-commercial-weekly-review',
     kpiVisibilityStorageKey: 'frm-commercial-kpi-visibility',
+    dashboardPath: '/dashboard/quality/frm-commercial-dashboard',
     timezone: 'Europe/Amsterdam',
     timezoneLabel: 'Amsterdam time',
     hasEjectedStream: true,
@@ -53,6 +56,7 @@ export const COMMERCIAL_PLANTS: Record<CommercialPlantId, CommercialPlantDefinit
     reportTitle: 'TSP Weekly Commercial Review',
     filenamePrefix: 'tsp-commercial-weekly-review',
     kpiVisibilityStorageKey: 'tsp-commercial-kpi-visibility',
+    dashboardPath: '/dashboard/quality/tsp-commercial-dashboard',
     timezone: 'Europe/London',
     timezoneLabel: 'UK time',
     hasEjectedStream: false,
