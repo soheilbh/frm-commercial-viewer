@@ -41,19 +41,20 @@ const KPI_VISIBILITY_OPTIONS: Array<{
   { key: 'inputVolume', label: 'Input volume' },
   { key: 'chlorine', label: 'Chlorine' },
   { key: 'pvc', label: 'PVC' },
+  { key: 'ejectedPvc', label: 'Ejected PVC' },
   { key: 'inputMoisture', label: 'Input moisture' },
   { key: 'outputMoisture', label: 'Output moisture' },
   { key: 'composition', label: 'Composition' }
 ];
 
-function loadKpiVisibility(storageKey: string): CommercialKpiVisibility {
-  if (typeof window === 'undefined') return DEFAULT_COMMERCIAL_KPI_VISIBILITY;
+function loadKpiVisibility(storageKey: string, defaults: CommercialKpiVisibility): CommercialKpiVisibility {
+  if (typeof window === 'undefined') return defaults;
   try {
     const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return DEFAULT_COMMERCIAL_KPI_VISIBILITY;
-    return { ...DEFAULT_COMMERCIAL_KPI_VISIBILITY, ...JSON.parse(raw) };
+    if (!raw) return defaults;
+    return { ...defaults, ...JSON.parse(raw) };
   } catch {
-    return DEFAULT_COMMERCIAL_KPI_VISIBILITY;
+    return defaults;
   }
 }
 
@@ -99,6 +100,15 @@ export function CommercialDashboardView() {
   const searchParams = useSearchParams();
   const plantId = plantFromParam(searchParams.get('plant'));
   const plant = getCommercialPlant(plantId);
+  // Ejected PVC needs a reject-stream sorter (FRM only), as in the in-app dashboard.
+  const kpiOptions = useMemo(
+    () => KPI_VISIBILITY_OPTIONS.filter((option) => plant.hasEjectedStream || option.key !== 'ejectedPvc'),
+    [plant.hasEjectedStream]
+  );
+  const defaultVisibility = useMemo<CommercialKpiVisibility>(
+    () => ({ ...DEFAULT_COMMERCIAL_KPI_VISIBILITY, ejectedPvc: plant.hasEjectedStream }),
+    [plant.hasEjectedStream]
+  );
   const switchPlant = (next: CommercialPlantId) => {
     const params = new URLSearchParams(window.location.search);
     // FRM is the default, so its URL carries no plant parameter.
@@ -152,9 +162,9 @@ export function CommercialDashboardView() {
   }, [plant.reportTitle]);
 
   useEffect(() => {
-    setKpiVisibility(loadKpiVisibility(plant.kpiVisibilityStorageKey));
+    setKpiVisibility(loadKpiVisibility(plant.kpiVisibilityStorageKey, defaultVisibility));
     setKpiVisibilityLoaded(true);
-  }, [plant.kpiVisibilityStorageKey]);
+  }, [plant.kpiVisibilityStorageKey, defaultVisibility]);
 
   useEffect(() => {
     if (!kpiVisibilityLoaded) return;
@@ -210,8 +220,8 @@ export function CommercialDashboardView() {
   };
 
   const visibleKpiCount = useMemo(
-    () => KPI_VISIBILITY_OPTIONS.filter((option) => kpiVisibility[option.key]).length,
-    [kpiVisibility]
+    () => kpiOptions.filter((option) => kpiVisibility[option.key]).length,
+    [kpiVisibility, kpiOptions]
   );
 
   if (loading) {
@@ -306,14 +316,14 @@ export function CommercialDashboardView() {
                   <Eye className='size-3.5 text-muted-foreground' />
                   KPI visibility
                   <Badge variant='secondary' className='h-5 px-1.5 font-mono text-[10px]'>
-                    {visibleKpiCount}/{KPI_VISIBILITY_OPTIONS.length}
+                    {visibleKpiCount}/{kpiOptions.length}
                   </Badge>
                   <ChevronDown className='size-3.5 text-muted-foreground' />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align='end' className='w-64 p-3'>
                 <div className='space-y-2'>
-                  {KPI_VISIBILITY_OPTIONS.map((option) => (
+                  {kpiOptions.map((option) => (
                     <label
                       key={option.key}
                       className='flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-[11px] font-medium'
