@@ -33,6 +33,13 @@ import { cn } from '@/lib/utils';
 import { toast, Toaster } from 'sonner';
 
 const A4_REPORT_WIDTH = 1123;
+/**
+ * TSP is under review: until it is confirmed, the FRM view shows no plant
+ * switch and TSP is reachable only through its link (?plant=tsp). Reviewers on
+ * the TSP view still get the switch to compare with FRM. Set to true to show
+ * the switch to everyone.
+ */
+const TSP_PUBLIC = false;
 
 const KPI_VISIBILITY_OPTIONS: Array<{
   key: keyof CommercialKpiVisibility;
@@ -264,7 +271,9 @@ export function CommercialDashboardView() {
       <PageContainer>
         <div className='no-print mb-3 flex flex-wrap items-center justify-end gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
-            <CommercialPlantSwitch value={plantId} onChange={switchPlant} />
+            {TSP_PUBLIC || plantId === 'tsp' ? (
+              <CommercialPlantSwitch value={plantId} onChange={switchPlant} />
+            ) : null}
             {weekOptions.length > 0 ? (
               <CommercialWeekSelector
                 weeks={weekOptions}
